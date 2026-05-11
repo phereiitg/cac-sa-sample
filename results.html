@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My Quiz Results — Summer Analytics 2025</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/supabase-client.js"></script>
+<script src="js/auth.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+:root{--bg:#0b0f1a;--surface:#111827;--surface2:#1a2235;--border:#1e2d40;--accent:#00d4aa;--accent2:#3b82f6;--text:#e2e8f0;--muted:#64748b;--danger:#f87171;--warn:#fbbf24;}
+body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
+
+/* ── Top bar ── */
+.topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:0.9rem 2rem;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50;}
+.topbar-left{display:flex;align-items:center;gap:1rem;}
+.logo-box{width:32px;height:32px;background:var(--accent);border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:0.72rem;color:#0b0f1a;flex-shrink:0;}
+.topbar-title{font-size:0.92rem;font-weight:700;}
+.topbar-sub{font-size:0.75rem;color:var(--muted);}
+.btn{display:inline-flex;align-items:center;gap:0.4rem;padding:0.55rem 1.1rem;border-radius:9px;border:none;font-family:'Outfit',sans-serif;font-size:0.84rem;font-weight:600;cursor:pointer;transition:all 0.15s;text-decoration:none;}
+.btn-outline{background:transparent;border:1px solid var(--border);color:var(--muted);}
+.btn-outline:hover{border-color:var(--accent);color:var(--accent);}
+.btn-primary{background:var(--accent);color:#0b0f1a;}
+.btn-primary:hover{opacity:0.9;}
+
+/* ── Layout ── */
+.container{max-width:860px;margin:0 auto;padding:2.5rem 1.5rem;}
+
+/* ── Profile hero ── */
+.profile-hero{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:2rem;margin-bottom:2rem;display:flex;align-items:center;gap:1.5rem;flex-wrap:wrap;}
+.avatar{width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1.25rem;color:#0b0f1a;flex-shrink:0;}
+.hero-info h1{font-size:1.25rem;font-weight:800;margin-bottom:0.2rem;}
+.hero-info p{color:var(--muted);font-size:0.85rem;}
+.hero-stats{margin-left:auto;display:flex;gap:1.5rem;flex-wrap:wrap;}
+.hero-stat{text-align:center;}
+.hero-stat-val{font-size:1.5rem;font-weight:800;font-family:'DM Mono',monospace;}
+.hero-stat-lbl{font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;}
+
+/* ── Week tabs ── */
+.week-tabs{display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:1.5rem;}
+.week-tab{padding:0.5rem 1.1rem;border-radius:9px;border:1px solid var(--border);background:none;color:var(--muted);font-family:'Outfit',sans-serif;font-size:0.84rem;font-weight:600;cursor:pointer;transition:all 0.15s;}
+.week-tab:hover{border-color:var(--accent2);color:var(--text);}
+.week-tab.active{background:var(--accent2);border-color:var(--accent2);color:#fff;}
+.week-tab.no-score{opacity:0.45;}
+
+/* ── Score summary card ── */
+.score-summary{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:2rem;margin-bottom:1.5rem;}
+.ss-top{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:1.5rem;flex-wrap:wrap;gap:1rem;}
+.ss-week{font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--muted);margin-bottom:0.4rem;}
+.ss-score-row{display:flex;align-items:baseline;gap:0.5rem;}
+.ss-score-big{font-size:3rem;font-weight:800;font-family:'DM Mono',monospace;color:var(--accent);line-height:1;}
+.ss-score-max{font-size:1.1rem;color:var(--muted);}
+.ss-pct{font-size:1.75rem;font-weight:800;}
+.ss-grade{display:inline-flex;align-items:center;padding:0.3rem 0.85rem;border-radius:8px;font-size:0.8rem;font-weight:700;margin-top:0.5rem;}
+.bar-track{height:8px;background:var(--border);border-radius:4px;overflow:hidden;margin-bottom:1rem;}
+.bar-fill{height:100%;border-radius:4px;transition:width 1s ease;}
+.ss-meta{display:flex;gap:1.5rem;flex-wrap:wrap;padding-top:1rem;border-top:1px solid var(--border);}
+.ss-meta-item{display:flex;align-items:center;gap:0.4rem;font-size:0.8rem;color:var(--muted);}
+.ss-meta-item svg{width:14px;height:14px;flex-shrink:0;}
+.ss-meta-item.warn{color:var(--warn);}
+.ss-meta-item.danger{color:var(--danger);}
+
+/* ── Feedback box ── */
+.feedback-card{background:rgba(59,130,246,0.05);border:1px solid rgba(59,130,246,0.2);border-radius:12px;padding:1rem 1.25rem;margin-bottom:1.5rem;}
+.feedback-label{font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--accent2);margin-bottom:0.4rem;}
+.feedback-text{font-size:0.88rem;line-height:1.65;color:var(--text);}
+
+/* ── Answer breakdown ── */
+.answers-section{}
+.answers-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem;}
+.answers-title{font-size:1rem;font-weight:700;}
+.answers-summary{font-size:0.82rem;color:var(--muted);}
+.answer-card{border:1px solid var(--border);border-radius:12px;padding:1.1rem 1.25rem;margin-bottom:0.75rem;transition:border-color 0.15s;}
+.answer-card.correct{border-color:rgba(0,212,170,0.3);background:rgba(0,212,170,0.02);}
+.answer-card.wrong{border-color:rgba(248,113,113,0.3);background:rgba(248,113,113,0.02);}
+.ac-header{display:flex;align-items:center;gap:0.75rem;margin-bottom:0.6rem;}
+.ac-num{font-size:0.72rem;font-weight:700;color:var(--muted);font-family:'DM Mono',monospace;flex-shrink:0;}
+.ac-result{font-size:0.72rem;font-weight:700;padding:0.15rem 0.55rem;border-radius:5px;flex-shrink:0;}
+.ac-result.correct{background:rgba(0,212,170,0.12);color:var(--accent);}
+.ac-result.wrong{background:rgba(248,113,113,0.12);color:var(--danger);}
+.ac-question{font-size:0.88rem;line-height:1.55;color:var(--text);margin-bottom:0.5rem;}
+.ac-answers{display:flex;gap:1.25rem;flex-wrap:wrap;font-size:0.8rem;}
+.ac-chosen{color:var(--muted);}
+.ac-chosen span.ok{color:var(--accent);font-weight:700;}
+.ac-chosen span.bad{color:var(--danger);font-weight:700;}
+.ac-correct-ans{color:var(--accent);font-weight:600;}
+
+/* ── Empty states ── */
+.empty-state{text-align:center;padding:4rem 2rem;}
+.empty-icon{font-size:3rem;margin-bottom:1rem;}
+.empty-title{font-size:1.1rem;font-weight:700;margin-bottom:0.5rem;}
+.empty-sub{color:var(--muted);font-size:0.88rem;line-height:1.6;}
+
+/* ── Print button ── */
+@media print{
+  .topbar,.week-tabs,.btn,.no-print{display:none!important;}
+  body{background:#fff;color:#000;}
+  .container{padding:0;}
+  .score-summary,.answer-card,.feedback-card,.profile-hero{border-color:#ddd;box-shadow:none;}
+  .ss-score-big,.ss-pct{color:#000;}
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-left">
+    <div class="logo-box">C/\A</div>
+    <div>
+      <div class="topbar-title">Summer Analytics 2025</div>
+      <div class="topbar-sub">Quiz Results</div>
+    </div>
+  </div>
+  <div style="display:flex;gap:0.6rem;flex-wrap:wrap;" class="no-print">
+    <button class="btn btn-outline" onclick="window.print()">
+      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+      Print
+    </button>
+    <a class="btn btn-outline" href="/dashboard.html">← Dashboard</a>
+  </div>
+</div>
+
+<div class="container">
+  <!-- Profile hero -->
+  <div class="profile-hero" id="profileHero">
+    <div style="color:var(--muted);">Loading your results…</div>
+  </div>
+
+  <!-- Week selector tabs -->
+  <div class="week-tabs" id="weekTabs"></div>
+
+  <!-- Active week detail -->
+  <div id="weekDetail">
+    <div class="empty-state">
+      <div class="empty-icon">📊</div>
+      <div class="empty-title">Select a week above</div>
+      <div class="empty-sub">Choose a week to see your score and answer breakdown.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+let currentUser    = null;
+let currentProfile = null;
+let allScores      = [];
+let activeWeek     = null;
+
+(async () => {
+  const session = await requireAuth();
+  if (!session) return;
+  currentUser    = session.user;
+  currentProfile = await getProfile(currentUser.id);
+  if (!currentProfile) { window.location.href = "/complete-profile.html"; return; }
+
+  await loadAllScores();
+  renderProfileHero();
+  renderWeekTabs();
+
+  // Auto-select first available week
+  if (allScores.length > 0) selectWeek(allScores[0].week_number);
+})();
+
+async function loadAllScores() {
+  const { data } = await supabaseClient
+    .from("quiz_scores").select("*")
+    .eq("user_id", currentUser.id)
+    .order("week_number");
+  allScores = data || [];
+}
+
+function renderProfileHero() {
+  const name    = currentProfile.full_name || currentUser.email;
+  const initial = name.charAt(0).toUpperCase();
+  const total   = allScores.reduce((sum, s) => sum + Number(s.score), 0);
+  const avg     = allScores.length ? Math.round(allScores.reduce((sum,s) => sum + Number(s.percentage), 0) / allScores.length) : 0;
+
+  document.getElementById("profileHero").innerHTML = `
+    <div class="avatar">${initial}</div>
+    <div class="hero-info">
+      <h1>${escHtml(name)}</h1>
+      <p>${escHtml(currentProfile.college || "")}${currentProfile.year_of_study ? " · " + currentProfile.year_of_study : ""}${currentProfile.branch ? " · " + currentProfile.branch : ""}</p>
+    </div>
+    <div class="hero-stats">
+      <div class="hero-stat">
+        <div class="hero-stat-val" style="color:var(--accent);">${total}</div>
+        <div class="hero-stat-lbl">Total Points</div>
+      </div>
+      <div class="hero-stat">
+        <div class="hero-stat-val" style="color:var(--accent2);">${allScores.length}</div>
+        <div class="hero-stat-lbl">Quizzes Done</div>
+      </div>
+      <div class="hero-stat">
+        <div class="hero-stat-val" style="color:${avg>=80?"var(--accent)":avg>=50?"var(--warn)":"var(--danger)"};">${avg}%</div>
+        <div class="hero-stat-lbl">Avg. Score</div>
+      </div>
+    </div>`;
+}
+
+function renderWeekTabs() {
+  const submittedWeeks = new Set(allScores.map(s => s.week_number));
+  const tabsEl = document.getElementById("weekTabs");
+  const weeks  = [1,2,3,4,5];
+  tabsEl.innerHTML = weeks.map(w => `
+    <button class="week-tab ${submittedWeeks.has(w) ? "" : "no-score"} ${activeWeek===w?"active":""}"
+      onclick="selectWeek(${w})">
+      Week ${w}
+      ${submittedWeeks.has(w) ? `<span style="font-size:0.65rem;opacity:0.7;margin-left:0.3rem;">✓</span>` : ""}
+    </button>`).join("");
+}
+
+function selectWeek(weekNum) {
+  activeWeek = weekNum;
+
+  // Update tab styles
+  document.querySelectorAll(".week-tab").forEach((t,i) => {
+    t.classList.toggle("active", i+1 === weekNum);
+  });
+
+  const score = allScores.find(s => s.week_number === weekNum);
+  const detail = document.getElementById("weekDetail");
+
+  if (!score) {
+    detail.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">⏳</div>
+        <div class="empty-title">Week ${weekNum} not submitted</div>
+        <div class="empty-sub">You haven't taken the Week ${weekNum} quiz yet, or results haven't been recorded.<br>
+          <a href="/dashboard.html" style="color:var(--accent2);text-decoration:none;margin-top:0.75rem;display:inline-block;">Go to Dashboard →</a>
+        </div>
+      </div>`;
+    return;
+  }
+
+  const pct       = Number(score.percentage) || 0;
+  const barColor  = pct >= 80 ? "var(--accent)" : pct >= 50 ? "var(--warn)" : "var(--danger)";
+  const pctColor  = pct >= 80 ? "var(--accent)" : pct >= 50 ? "var(--warn)" : "var(--danger)";
+  const grade     = pct >= 90 ? {label:"Excellent",bg:"rgba(0,212,170,0.12)",color:"var(--accent)"}
+                  : pct >= 75 ? {label:"Good",bg:"rgba(59,130,246,0.12)",color:"var(--accent2)"}
+                  : pct >= 50 ? {label:"Average",bg:"rgba(251,191,36,0.12)",color:"var(--warn)"}
+                  :             {label:"Needs Improvement",bg:"rgba(248,113,113,0.12)",color:"var(--danger)"};
+
+  const answers = Array.isArray(score.answers) ? score.answers : [];
+  const correct = answers.filter(a => a.is_correct).length;
+  const submittedDate = score.submitted_at ? new Date(score.submitted_at).toLocaleDateString("en-IN",{day:"numeric",month:"long",year:"numeric",hour:"2-digit",minute:"2-digit"}) : "—";
+
+  detail.innerHTML = `
+    <!-- Score summary -->
+    <div class="score-summary">
+      <div class="ss-top">
+        <div>
+          <div class="ss-week">Week ${score.week_number} Quiz</div>
+          <div class="ss-score-row">
+            <div class="ss-score-big">${score.score}</div>
+            <div class="ss-score-max">/ ${score.max_score}</div>
+          </div>
+          <span class="ss-grade" style="background:${grade.bg};color:${grade.color};">${grade.label}</span>
+        </div>
+        <div style="text-align:right;">
+          <div class="ss-pct" style="color:${pctColor};">${pct}%</div>
+          <div style="font-size:0.78rem;color:var(--muted);margin-top:0.3rem;">${answers.length > 0 ? `${correct} / ${answers.length} correct` : ""}</div>
+        </div>
+      </div>
+      <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${barColor};"></div></div>
+      <div class="ss-meta">
+        <div class="ss-meta-item">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          Submitted ${submittedDate}
+        </div>
+        ${score.time_taken_secs ? `<div class="ss-meta-item">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          Time: ${formatSecs(score.time_taken_secs)}
+        </div>` : ""}
+        ${score.tab_switches > 0 ? `<div class="ss-meta-item warn">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          ${score.tab_switches} tab switch${score.tab_switches > 1 ? "es" : ""} detected
+        </div>` : ""}
+        ${score.fullscreen_exits > 0 ? `<div class="ss-meta-item danger">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          ${score.fullscreen_exits} fullscreen exit${score.fullscreen_exits > 1 ? "s" : ""} detected
+        </div>` : ""}
+      </div>
+    </div>
+
+    <!-- Feedback -->
+    ${score.feedback ? `
+    <div class="feedback-card">
+      <div class="feedback-label">Feedback</div>
+      <div class="feedback-text">${escHtml(score.feedback)}</div>
+    </div>` : ""}
+
+    <!-- Answers breakdown -->
+    ${answers.length > 0 ? `
+    <div class="answers-section">
+      <div class="answers-header">
+        <div class="answers-title">Answer Breakdown</div>
+        <div class="answers-summary">${correct} correct · ${answers.length - correct} wrong · out of ${answers.length} questions</div>
+      </div>
+      ${answers.map((a, i) => `
+        <div class="answer-card ${a.is_correct ? "correct" : "wrong"}">
+          <div class="ac-header">
+            <span class="ac-num">Q${i + 1}</span>
+            <span class="ac-result ${a.is_correct ? "correct" : "wrong"}">${a.is_correct ? "✓ Correct" : "✗ Wrong"}</span>
+          </div>
+          <div class="ac-question">${escHtml(a.question || `Question ${i+1}`)}</div>
+          <div class="ac-answers">
+            <div class="ac-chosen">Your answer: <span class="${a.is_correct ? "ok" : "bad"}">${escHtml(a.chosen || "—")}</span></div>
+            ${!a.is_correct && a.correct ? `<div class="ac-correct-ans">Correct: ${escHtml(a.correct)}</div>` : ""}
+          </div>
+        </div>`).join("")}
+    </div>` : `
+    <div class="feedback-card" style="background:rgba(100,116,139,0.05);border-color:rgba(100,116,139,0.2);">
+      <div class="feedback-label" style="color:var(--muted);">Answer Breakdown</div>
+      <div class="feedback-text" style="color:var(--muted);">Detailed question-by-question breakdown is not available for this quiz. Your score was recorded from the quiz platform.</div>
+    </div>`}`;
+
+  // Animate bar
+  requestAnimationFrame(() => {
+    const fill = detail.querySelector(".bar-fill");
+    if (fill) { fill.style.width = "0"; requestAnimationFrame(() => { fill.style.width = pct + "%"; }); }
+  });
+}
+
+function formatSecs(secs) {
+  const m = Math.floor(secs / 60), s = secs % 60;
+  return `${m}m ${s}s`;
+}
+
+function escHtml(str) {
+  return String(str || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+</script>
+</body>
+</html>
