@@ -1,187 +1,154 @@
 -- ============================================================
--- Summer Analytics 2025 — Full Platform Schema
--- Run once in Supabase SQL Editor (Dashboard → SQL Editor)
+-- Summer Analytics 2025 — Native Quiz Upgrade Patch
+-- Safely applies the new schema changes over your existing DB.
 -- ============================================================
 
--- ── Extensions ───────────────────────────────────────────────
-create extension if not exists "uuid-ossp";
+-- 1. Add the new native quiz configuration columns to the existing table
+ALTER TABLE public.quiz_config 
+  ADD COLUMN IF NOT EXISTS shuffle_questions boolean default true,
+  ADD COLUMN IF NOT EXISTS shuffle_options boolean default false,
+  ADD COLUMN IF NOT EXISTS show_result_immediately boolean default true;
 
--- ── Profiles ─────────────────────────────────────────────────
-create table if not exists public.profiles (
-  id            uuid references auth.users on delete cascade primary key,
-  email         text unique not null,
-  full_name     text,
-  college       text,
-  year_of_study text,
-  branch        text,
-  phone         text,
-  roll_number   text,
-  is_admin      boolean default false,
-  created_at    timestamptz default now()
-);
-
--- ── Announcements ─────────────────────────────────────────────
-create table if not exists public.announcements (
-  id          uuid default gen_random_uuid() primary key,
-  title       text not null,
-  body        text,
-  links       jsonb default '[]',  -- [{label, url}]
-  is_active   boolean default true,
-  pinned      boolean default false,
-  created_at  timestamptz default now(),
-  updated_at  timestamptz default now()
-);
-
--- ── Weeks (course structure) ──────────────────────────────────
-create table if not exists public.weeks (
-  id           uuid default gen_random_uuid() primary key,
-  week_number  int unique not null,
-  title        text not null default '',
-  is_published boolean default false,
-  published_at timestamptz,
-  created_at   timestamptz default now(),
-  updated_at   timestamptz default now()
-);
-
--- ── Week Days (content rows) ──────────────────────────────────
-create table if not exists public.week_days (
-  id           uuid default gen_random_uuid() primary key,
-  week_id      uuid references public.weeks(id) on delete cascade,
-  week_number  int not null,
-  day_number   int not null,  -- 1..7
-  description  text,
-  task1_label  text, task1_url text,
-  task2_label  text, task2_url text,
-  task3_label  text, task3_url text,
-  sort_order   int default 0,
-  unique(week_id, day_number)
-);
-
--- ── Quiz Config (one row per week quiz) ───────────────────────
-create table if not exists public.quiz_config (
-  id              uuid default gen_random_uuid() primary key,
-  week_number     int unique not null,
-  quiz_title      text,
-  quiz_url        text,       -- TestPortal URL or any quiz URL
-  test_id         text,       -- TestPortal test ID
-  is_active       boolean default false,
-  opens_at        timestamptz,
-  closes_at       timestamptz,
-  max_score       numeric default 100,
-  time_limit_mins int default 30,
-  created_at      timestamptz default now(),
-  updated_at      timestamptz default now()
-);
-
--- ── Quiz Scores ───────────────────────────────────────────────
-create table if not exists public.quiz_scores (
-  id              uuid default gen_random_uuid() primary key,
-  user_id         uuid references public.profiles(id) on delete cascade,
-  email           text,
-  week_number     int,
-  score           numeric,
-  max_score       numeric,
-  percentage      numeric,
-  feedback        text,
-  answers         jsonb default '[]',  -- [{question, chosen, correct, is_correct}]
-  tab_switches    int default 0,
-  fullscreen_exits int default 0,
-  time_taken_secs  int,
-  submitted_at    timestamptz default now(),
-  unique(user_id, week_number)
-);
-
--- ── Quiz Violations (detailed log) ───────────────────────────
-create table if not exists public.quiz_violations (
+-- 2. Create the brand new quiz_questions table
+CREATE TABLE IF NOT EXISTS public.quiz_questions (
   id             uuid default gen_random_uuid() primary key,
-  user_id        uuid references public.profiles(id) on delete cascade,
-  week_number    int,
-  violation_type text check (violation_type in ('tab_switch','fullscreen_exit','window_blur','devtools')),
-  occurred_at    timestamptz default now()
+  week_number    int not null,
+  question_text  text not null,
+  option_a       text not null,
+  option_b       text not null,
+  option_c       text,
+  option_d       text,
+  correct_option text not null check (correct_option in ('A','B','C','D')),
+  explanation    text,
+  marks          int default 1,
+  sort_order     int default 0,
+  created_at     timestamptz default now()
 );
 
--- ── AI Usage (rate limiting) ──────────────────────────────────
-create table if not exists public.ai_usage (
-  user_id       uuid references public.profiles(id) on delete cascade,
-  date          date default current_date,
-  message_count int default 0,
-  primary key (user_id, date)
-);
+-- 3. Enable Security and Policies for the new table
+ALTER TABLE public.quiz_questions ENABLE ROW LEVEL SECURITY;
 
--- ============================================================
--- Row Level Security
--- ============================================================
-alter table public.profiles        enable row level security;
-alter table public.announcements   enable row level security;
-alter table public.weeks           enable row level security;
-alter table public.week_days       enable row level security;
-alter table public.quiz_config     enable row level security;
-alter table public.quiz_scores     enable row level security;
-alter table public.quiz_violations enable row level security;
-alter table public.ai_usage        enable row level security;
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE schemaname = 'public' 
+        AND tablename = 'quiz_questions' 
+        AND policyname = 'quiz_questions: admin all'
+    ) THEN
+        CREATE POLICY "quiz_questions: admin all" ON public.quiz_questions FOR ALL
+        USING (EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND is_admin));
+    END IF;
+END $$;
 
--- profiles
-create policy "profiles: own select"   on public.profiles for select using (auth.uid() = id);
-create policy "profiles: own insert"   on public.profiles for insert with check (auth.uid() = id);
-create policy "profiles: own update"   on public.profiles for update using (auth.uid() = id);
+-- 4. Create the secure functions (RPCs) to fetch and grade questions
+CREATE OR REPLACE FUNCTION public.get_quiz_questions(p_week_number int)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE
+  v_cfg record;
+  v_qs  jsonb;
+BEGIN
+  IF auth.uid() IS NULL THEN RAISE EXCEPTION 'Not authenticated'; END IF;
 
--- announcements: everyone authenticated can read
-create policy "announcements: auth read" on public.announcements for select to authenticated using (true);
-create policy "announcements: admin write" on public.announcements for all
-  using (exists (select 1 from public.profiles where id = auth.uid() and is_admin = true));
+  SELECT * INTO v_cfg FROM public.quiz_config WHERE week_number = p_week_number;
+  IF NOT FOUND             THEN RAISE EXCEPTION 'No quiz configured for week %', p_week_number; END IF;
+  IF NOT v_cfg.is_active   THEN RAISE EXCEPTION 'Quiz is not active'; END IF;
+  IF v_cfg.opens_at  IS NOT NULL AND now() < v_cfg.opens_at  THEN RAISE EXCEPTION 'Quiz has not opened yet'; END IF;
+  IF v_cfg.closes_at IS NOT NULL AND now() > v_cfg.closes_at THEN RAISE EXCEPTION 'Quiz window has closed';  END IF;
 
--- weeks: published weeks readable by all authenticated
-create policy "weeks: auth read published" on public.weeks for select to authenticated
-  using (is_published = true or exists (select 1 from public.profiles where id = auth.uid() and is_admin = true));
-create policy "weeks: admin write" on public.weeks for all
-  using (exists (select 1 from public.profiles where id = auth.uid() and is_admin = true));
+  IF EXISTS (SELECT 1 FROM public.quiz_scores WHERE user_id = auth.uid() AND week_number = p_week_number) THEN
+    RAISE EXCEPTION 'Already submitted';
+  END IF;
 
--- week_days: published weeks
-create policy "week_days: auth read" on public.week_days for select to authenticated
-  using (exists (select 1 from public.weeks w where w.id = week_id and (w.is_published = true or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin = true))));
-create policy "week_days: admin write" on public.week_days for all
-  using (exists (select 1 from public.profiles where id = auth.uid() and is_admin = true));
+  IF v_cfg.shuffle_questions THEN
+    SELECT jsonb_agg(q) INTO v_qs FROM (
+      SELECT id, week_number, question_text, option_a, option_b, option_c, option_d, marks
+      FROM public.quiz_questions WHERE week_number = p_week_number ORDER BY random()
+    ) q;
+  ELSE
+    SELECT jsonb_agg(q ORDER BY q.sort_order) INTO v_qs FROM (
+      SELECT id, week_number, question_text, option_a, option_b, option_c, option_d, marks, sort_order
+      FROM public.quiz_questions WHERE week_number = p_week_number
+    ) q;
+  END IF;
 
--- quiz_config: active quizzes visible to all authenticated
-create policy "quiz_config: auth read" on public.quiz_config for select to authenticated using (true);
-create policy "quiz_config: admin write" on public.quiz_config for all
-  using (exists (select 1 from public.profiles where id = auth.uid() and is_admin = true));
+  RETURN jsonb_build_object(
+    'questions',   COALESCE(v_qs, '[]'::jsonb),
+    'time_limit',  v_cfg.time_limit_mins,
+    'quiz_title',  v_cfg.quiz_title,
+    'shuffle_opts',v_cfg.shuffle_options
+  );
+END;
+$$;
 
--- quiz_scores: own rows + admin reads all
-create policy "quiz_scores: own select" on public.quiz_scores for select
-  using (auth.uid() = user_id or exists (select 1 from public.profiles where id = auth.uid() and is_admin = true));
-create policy "quiz_scores: auth read all (leaderboard)" on public.quiz_scores for select to authenticated using (true);
+CREATE OR REPLACE FUNCTION public.submit_quiz(
+  p_week_number  int,
+  p_answers      jsonb,
+  p_time_secs    int default 0,
+  p_tab_switches int default 0,
+  p_fs_exits     int default 0
+)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE
+  v_uid      uuid := auth.uid();
+  v_email    text;
+  v_score    numeric := 0;
+  v_max      numeric := 0;
+  v_pct      numeric := 0;
+  v_detail   jsonb   := '[]'::jsonb;
+  q          record;
+  v_selected text;
+  v_ok       boolean;
+BEGIN
+  IF v_uid IS NULL THEN RAISE EXCEPTION 'Not authenticated'; END IF;
 
--- quiz_violations: own rows + admin
-create policy "quiz_violations: own insert" on public.quiz_violations for insert with check (auth.uid() = user_id);
-create policy "quiz_violations: admin read" on public.quiz_violations for select
-  using (auth.uid() = user_id or exists (select 1 from public.profiles where id = auth.uid() and is_admin = true));
+  SELECT email INTO v_email FROM public.profiles WHERE id = v_uid;
 
--- ai_usage
-create policy "ai_usage: own rows" on public.ai_usage for all using (auth.uid() = user_id);
+  IF EXISTS (SELECT 1 FROM public.quiz_scores WHERE user_id = v_uid AND week_number = p_week_number) THEN
+    RAISE EXCEPTION 'Already submitted';
+  END IF;
 
--- ============================================================
--- Indexes
--- ============================================================
-create index if not exists idx_quiz_scores_user   on public.quiz_scores (user_id);
-create index if not exists idx_quiz_scores_week   on public.quiz_scores (week_number);
-create index if not exists idx_profiles_email     on public.profiles (email);
-create index if not exists idx_week_days_week     on public.week_days (week_number);
-create index if not exists idx_violations_user    on public.quiz_violations (user_id);
+  FOR q IN SELECT * FROM public.quiz_questions WHERE week_number = p_week_number ORDER BY sort_order LOOP
+    v_max := v_max + q.marks;
 
--- ============================================================
--- Seed: initial weeks (unpublished)
--- ============================================================
-insert into public.weeks (week_number, title, is_published) values
-  (1, 'Week 1', false),
-  (2, 'Week 2', false),
-  (3, 'Week 3', false),
-  (4, 'Week 4', false),
-  (5, 'Week 5', false)
-on conflict (week_number) do nothing;
+    SELECT upper(trim(elem->>'selected')) INTO v_selected
+      FROM jsonb_array_elements(p_answers) elem
+     WHERE elem->>'question_id' = q.id::text
+     LIMIT 1;
 
--- ============================================================
--- Realtime (optional)
--- ============================================================
--- alter publication supabase_realtime add table public.quiz_scores;
--- alter publication supabase_realtime add table public.announcements;
+    v_ok := (v_selected = upper(q.correct_option));
+    IF v_ok THEN v_score := v_score + q.marks; END IF;
+
+    v_detail := v_detail || jsonb_build_array(jsonb_build_object(
+      'question',   q.question_text,
+      'option_a',   q.option_a, 'option_b', q.option_b,
+      'option_c',   q.option_c, 'option_d', q.option_d,
+      'chosen',     COALESCE(v_selected, '—'),
+      'correct',    q.correct_option,
+      'is_correct', v_ok,
+      'explanation',COALESCE(q.explanation,''),
+      'marks',      q.marks
+    ));
+  END LOOP;
+
+  IF v_max > 0 THEN v_pct := round((v_score / v_max) * 100, 2); END IF;
+
+  INSERT INTO public.quiz_scores
+    (user_id, email, week_number, score, max_score, percentage,
+     answers, tab_switches, fullscreen_exits, time_taken_secs)
+  VALUES
+    (v_uid, v_email, p_week_number, v_score, v_max, v_pct,
+     v_detail, p_tab_switches, p_fs_exits, p_time_secs);
+
+  RETURN jsonb_build_object(
+    'score', v_score, 'max_score', v_max, 'percentage', v_pct, 'answers', v_detail
+  );
+END;
+$$;
+
+-- 5. Grant permissions to use the functions
+GRANT EXECUTE ON FUNCTION public.get_quiz_questions(int)              TO authenticated;
+GRANT EXECUTE ON FUNCTION public.submit_quiz(int,jsonb,int,int,int)   TO authenticated;
+
+-- 6. Add Index for performance
+CREATE INDEX IF NOT EXISTS idx_quiz_questions_week ON public.quiz_questions (week_number, sort_order);

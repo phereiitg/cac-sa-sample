@@ -1,543 +1,708 @@
 // ============================================================
-// js/admin.js — all admin panel logic
+// js/admin.js  —  Summer Analytics 2025
 // ============================================================
 
-let adminProfile = null;
-let allWeeks     = [];
-let editingWeekId = null;
+let adminProfile    = null;
+let allWeeks        = [];
+let editingWeekId   = null;
+let activeQWeek     = null;   // currently selected week in question editor
+let allParticipants = [];
+let allResults      = [];
 
-// ============================================================
-// Boot — require admin
-// ============================================================
+// ── Helpers ───────────────────────────────────────────────────
+function esc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function $(id) { return document.getElementById(id); }
+function toLocalDT(iso) {
+  if (!iso) return '';
+  const d = new Date(iso), p = n => String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function downloadCSV(name, rows) {
+  const csv = rows.map(r => r.map(c => `"${String(c??'').replace(/"/g,'""')}"`).join(',')).join('\n');
+  const a = Object.assign(document.createElement('a'), {
+    href: URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' })),
+    download: name
+  });
+  a.click(); URL.revokeObjectURL(a.href);
+}
+
+// ── Boot ──────────────────────────────────────────────────────
 (async () => {
   const auth = await requireAdmin();
   if (!auth) return;
-
   adminProfile = auth.profile;
-  document.getElementById("adminName").textContent = adminProfile.full_name || adminProfile.email;
+  $('adminName').textContent = adminProfile.full_name || adminProfile.email;
 
-  await loadDashboardStats();
-  await loadWeekSelectorButtons();
-  await loadQuizConfig();
-  await loadParticipants();
-  await loadResults();
-  await loadViolations();
-  await loadAnnouncements();
+  await Promise.all([
+    loadStats(),
+    loadContentWeeks(),
+    loadQuizConfig(),
+    loadQWeekButtons(),
+    loadParticipants(),
+    loadResults(),
+    loadViolations(),
+    loadAnnouncements(),
+  ]);
 })();
 
-// ============================================================
-// Tab switching
-// ============================================================
+// ── Tab switch ────────────────────────────────────────────────
 function switchTab(name) {
-  document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
-  document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
-  document.getElementById(`tab-${name}`)?.classList.add("active");
-  document.querySelector(`.nav-item[data-tab="${name}"]`)?.classList.add("active");
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  $(`tab-${name}`)?.classList.add('active');
+  document.querySelector(`.nav-item[data-tab="${name}"]`)?.classList.add('active');
 }
 
-// ============================================================
-// Dashboard stats
-// ============================================================
-async function loadDashboardStats() {
-  const [{ count: pCount }, { count: sCount }, { count: vCount }, { data: qActive }] = await Promise.all([
-    supabaseClient.from("profiles").select("id", { count: "exact", head: true }),
-    supabaseClient.from("quiz_scores").select("id", { count: "exact", head: true }),
-    supabaseClient.from("quiz_violations").select("id", { count: "exact", head: true }),
-    supabaseClient.from("quiz_config").select("week_number").eq("is_active", true).maybeSingle(),
+// ── Stats ─────────────────────────────────────────────────────
+async function loadStats() {
+  const [{ count: p }, { count: s }, { count: v }, { data: q }] = await Promise.all([
+    supabaseClient.from('profiles').select('*', { count: 'exact', head: true }),
+    supabaseClient.from('quiz_scores').select('*', { count: 'exact', head: true }),
+    supabaseClient.from('quiz_violations').select('*', { count: 'exact', head: true }),
+    supabaseClient.from('quiz_config').select('week_number').eq('is_active', true).maybeSingle(),
   ]);
-
-  document.getElementById("statParticipants").textContent = pCount ?? "—";
-  document.getElementById("statSubmissions").textContent  = sCount ?? "—";
-  document.getElementById("statViolations").textContent   = vCount ?? "—";
-  document.getElementById("statActiveQuiz").textContent   = qActive ? `Week ${qActive.week_number}` : "None";
+  $('stP').textContent = p ?? '—';
+  $('stS').textContent = s ?? '—';
+  $('stV').textContent = v ?? '—';
+  $('stQ').textContent = q ? `Week ${q.week_number}` : 'None';
 }
 
-// ============================================================
-// ── CONTENT MANAGER ──────────────────────────────────────────
-// ============================================================
-
-async function loadWeekSelectorButtons() {
-  const { data: weeks } = await supabaseClient.from("weeks").select("*").order("week_number");
-  allWeeks = weeks || [];
-  const container = document.getElementById("weekSelectorBtns");
-  container.innerHTML = allWeeks.map(w => `
-    <button class="btn ${editingWeekId === w.id ? "btn-primary" : "btn-outline"}"
-      onclick="selectWeek('${w.id}')">
-      ${w.title || "Week " + w.week_number}
-      <span style="margin-left:0.4rem;font-size:0.7rem;opacity:0.7;">${w.is_published ? "✓ Live" : "Draft"}</span>
-    </button>`).join("");
+// ═══════════════════════════════════════════════════════════════
+// COURSE CONTENT
+// ═══════════════════════════════════════════════════════════════
+async function loadContentWeeks() {
+  const { data } = await supabaseClient.from('weeks').select('*').order('week_number');
+  allWeeks = data || [];
+  const el = $('contentWeekBtns');
+  el.innerHTML = allWeeks.map(w => `
+    <button class="wsb ${editingWeekId === w.id ? 'active' : ''}" onclick="selectContentWeek('${w.id}')">
+      ${esc(w.title || 'Week ' + w.week_number)}
+      <span style="opacity:.6;font-size:.68rem;margin-left:.3rem;">${w.is_published ? '✓ Live' : 'Draft'}</span>
+    </button>`).join('');
 }
 
-async function selectWeek(weekId) {
-  editingWeekId = weekId;
-  await loadWeekSelectorButtons();
-  await renderWeekEditor(weekId);
+async function selectContentWeek(id) {
+  editingWeekId = id;
+  await loadContentWeeks();
+  await renderContentEditor(id);
 }
 
-async function renderWeekEditor(weekId) {
-  const week = allWeeks.find(w => w.id === weekId);
+async function renderContentEditor(id) {
+  const week = allWeeks.find(w => w.id === id);
   if (!week) return;
-
   const { data: days } = await supabaseClient
-    .from("week_days").select("*").eq("week_id", weekId).order("day_number");
+    .from('week_days').select('*').eq('week_id', id).order('day_number');
 
-  const area = document.getElementById("weekEditorArea");
-  area.innerHTML = `
+  $('contentEditor').innerHTML = `
     <div class="card">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:0.75rem;">
-        <div class="card-title" style="margin:0;">${week.title || "Week " + week.week_number} — Editor</div>
-        <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
-          <label class="toggle" style="font-size:0.82rem;">
-            <input type="checkbox" id="weekPublished" ${week.is_published ? "checked" : ""}
-              onchange="toggleWeekPublish('${weekId}', this.checked)">
-            <span>Published (visible to students)</span>
-          </label>
-        </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.75rem;margin-bottom:1rem;">
+        <div class="card-title" style="margin:0;">${esc(week.title || 'Week '+week.week_number)} — Editor</div>
+        <label class="toggle" style="font-size:.83rem;">
+          <input type="checkbox" id="wkPublished" ${week.is_published ? 'checked' : ''}
+            onchange="togglePublish('${id}', this.checked)">
+          Published (students can see this week)
+        </label>
       </div>
-
-      <div class="form-row" style="margin-bottom:1.25rem;">
-        <div>
-          <label>Week Title</label>
-          <input type="text" id="weekTitle" value="${escHtml(week.title || "")}" placeholder="e.g. Week 2">
-        </div>
+      <div class="form-row" style="margin-bottom:1.1rem;">
+        <div><label>Week Title</label><input type="text" id="wkTitle" value="${esc(week.title||'')}"></div>
         <div style="display:flex;align-items:flex-end;">
-          <button class="btn btn-outline" onclick="saveWeekTitle('${weekId}')">Save Title</button>
+          <button class="btn btn-outline" onclick="saveWeekTitle('${id}')">Save Title</button>
         </div>
       </div>
-
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;">
-        <div style="font-size:0.85rem;font-weight:700;">Daily Content</div>
-        <button class="btn btn-primary btn-sm" onclick="addDay('${weekId}', ${(days||[]).length + 1})">+ Add Day</button>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;">
+        <span style="font-weight:700;font-size:.88rem;">Daily Content</span>
+        <button class="btn btn-primary btn-sm" onclick="addDay('${id}', ${(days||[]).length + 1})">+ Add Day</button>
       </div>
       <div id="daysContainer">
-        ${(days || []).map(d => renderDayRow(d)).join("")}
+        ${(days || []).map(d => renderDayCard(d)).join('')}
       </div>
     </div>`;
 }
 
-function renderDayRow(d) {
+function renderDayCard(d) {
   return `
-    <div class="day-row" id="day-${d.id}">
-      <div class="day-row-header">
-        <div class="day-row-title">Day ${d.day_number}</div>
+    <div class="day-card" id="day-${d.id}">
+      <div class="day-card-header">
+        <div class="day-card-title">Day ${d.day_number}</div>
         <button class="btn btn-danger btn-sm" onclick="deleteDay('${d.id}')">Delete</button>
       </div>
-      <div class="form-row full" style="margin-bottom:0.75rem;">
-        <div>
-          <label>Description (bold keywords with **bold**)</label>
-          <textarea id="desc-${d.id}" rows="2">${escHtml(d.description || "")}</textarea>
-        </div>
+      <div class="form-row full" style="margin-bottom:.65rem;">
+        <div><label>Description</label>
+          <textarea id="desc-${d.id}" rows="2">${esc(d.description||'')}</textarea></div>
       </div>
-      <div class="form-row three" style="margin-bottom:0.5rem;">
-        <div><label>Task 1 Label</label><input type="text" id="t1l-${d.id}" value="${escHtml(d.task1_label||"")}"></div>
-        <div><label>Task 2 Label</label><input type="text" id="t2l-${d.id}" value="${escHtml(d.task2_label||"")}"></div>
-        <div><label>Task 3 Label</label><input type="text" id="t3l-${d.id}" value="${escHtml(d.task3_label||"")}"></div>
+      <div class="form-row three" style="margin-bottom:.45rem;">
+        <div><label>Task 1 Label</label><input type="text" id="t1l-${d.id}" value="${esc(d.task1_label||'')}"></div>
+        <div><label>Task 2 Label</label><input type="text" id="t2l-${d.id}" value="${esc(d.task2_label||'')}"></div>
+        <div><label>Task 3 Label</label><input type="text" id="t3l-${d.id}" value="${esc(d.task3_label||'')}"></div>
       </div>
-      <div class="form-row three" style="margin-bottom:0.75rem;">
-        <div><label>Task 1 URL</label><input type="url" id="t1u-${d.id}" value="${escHtml(d.task1_url||"")}"></div>
-        <div><label>Task 2 URL</label><input type="url" id="t2u-${d.id}" value="${escHtml(d.task2_url||"")}"></div>
-        <div><label>Task 3 URL</label><input type="url" id="t3u-${d.id}" value="${escHtml(d.task3_url||"")}"></div>
+      <div class="form-row three" style="margin-bottom:.75rem;">
+        <div><label>Task 1 URL</label><input type="url" id="t1u-${d.id}" value="${esc(d.task1_url||'')}"></div>
+        <div><label>Task 2 URL</label><input type="url" id="t2u-${d.id}" value="${esc(d.task2_url||'')}"></div>
+        <div><label>Task 3 URL</label><input type="url" id="t3u-${d.id}" value="${esc(d.task3_url||'')}"></div>
       </div>
-      <button class="btn btn-primary btn-sm" onclick="saveDay('${d.id}', '${d.week_id}')">💾 Save Day ${d.day_number}</button>
+      <button class="btn btn-primary btn-sm" onclick="saveDay('${d.id}')">💾 Save Day ${d.day_number}</button>
     </div>`;
 }
 
-async function saveWeekTitle(weekId) {
-  const title = document.getElementById("weekTitle").value.trim();
-  const { error } = await supabaseClient.from("weeks").update({ title, updated_at: new Date().toISOString() }).eq("id", weekId);
-  if (error) { showToast("Error: " + error.message, "error"); return; }
-  showToast("Week title saved!", "success");
-  allWeeks = allWeeks.map(w => w.id === weekId ? { ...w, title } : w);
-  await loadWeekSelectorButtons();
+async function saveWeekTitle(id) {
+  const title = $('wkTitle').value.trim();
+  const { error } = await supabaseClient.from('weeks').update({ title, updated_at: new Date().toISOString() }).eq('id', id);
+  if (error) { showToast('Error: ' + error.message, 'error'); return; }
+  allWeeks = allWeeks.map(w => w.id === id ? { ...w, title } : w);
+  showToast('Title saved!', 'success');
+  await loadContentWeeks();
 }
 
-async function toggleWeekPublish(weekId, published) {
-  const { error } = await supabaseClient.from("weeks").update({
-    is_published: published,
-    published_at: published ? new Date().toISOString() : null,
-    updated_at: new Date().toISOString()
-  }).eq("id", weekId);
-  if (error) { showToast("Error: " + error.message, "error"); return; }
-  showToast(published ? "Week is now LIVE for students!" : "Week set to draft.", published ? "success" : "warn");
-  allWeeks = allWeeks.map(w => w.id === weekId ? { ...w, is_published: published } : w);
-  await loadWeekSelectorButtons();
+async function togglePublish(id, pub) {
+  const { error } = await supabaseClient.from('weeks').update({
+    is_published: pub, published_at: pub ? new Date().toISOString() : null, updated_at: new Date().toISOString()
+  }).eq('id', id);
+  if (error) { showToast('Error: ' + error.message, 'error'); return; }
+  allWeeks = allWeeks.map(w => w.id === id ? { ...w, is_published: pub } : w);
+  showToast(pub ? '✓ Week is now LIVE for students!' : 'Week set to draft.', pub ? 'success' : 'warn');
+  await loadContentWeeks();
 }
 
-async function addDay(weekId, dayNumber) {
-  const { data, error } = await supabaseClient.from("week_days").insert({
-    week_id: weekId, week_number: allWeeks.find(w => w.id === weekId)?.week_number, day_number: dayNumber,
-    description: "", task1_label: "", task1_url: "", task2_label: "", task2_url: "", task3_label: "", task3_url: ""
+async function addDay(weekId, dayNum) {
+  const weekNum = allWeeks.find(w => w.id === weekId)?.week_number;
+  const { data, error } = await supabaseClient.from('week_days').insert({
+    week_id: weekId, week_number: weekNum, day_number: dayNum,
+    description:'', task1_label:'', task1_url:'', task2_label:'', task2_url:'', task3_label:'', task3_url:''
   }).select().single();
-  if (error) { showToast("Error: " + error.message, "error"); return; }
-  const container = document.getElementById("daysContainer");
-  container.insertAdjacentHTML("beforeend", renderDayRow(data));
-  showToast(`Day ${dayNumber} added!`, "success");
+  if (error) { showToast('Error: ' + error.message, 'error'); return; }
+  $('daysContainer').insertAdjacentHTML('beforeend', renderDayCard(data));
+  showToast(`Day ${dayNum} added.`, 'success');
 }
 
-async function saveDay(dayId, weekId) {
-  const g = id => document.getElementById(`${id}-${dayId}`)?.value.trim() || "";
-  const { error } = await supabaseClient.from("week_days").update({
-    description: g("desc"),
-    task1_label: g("t1l"), task1_url: g("t1u"),
-    task2_label: g("t2l"), task2_url: g("t2u"),
-    task3_label: g("t3l"), task3_url: g("t3u"),
-  }).eq("id", dayId);
-  if (error) { showToast("Save failed: " + error.message, "error"); return; }
-  showToast("Day saved!", "success");
+async function saveDay(id) {
+  const g = pre => $(`${pre}-${id}`)?.value.trim() ?? '';
+  const { error } = await supabaseClient.from('week_days').update({
+    description: g('desc'),
+    task1_label: g('t1l'), task1_url: g('t1u'),
+    task2_label: g('t2l'), task2_url: g('t2u'),
+    task3_label: g('t3l'), task3_url: g('t3u'),
+  }).eq('id', id);
+  if (error) { showToast('Save failed: ' + error.message, 'error'); return; }
+  showToast('Day saved!', 'success');
 }
 
-async function deleteDay(dayId) {
-  if (!confirm("Delete this day's content? This cannot be undone.")) return;
-  const { error } = await supabaseClient.from("week_days").delete().eq("id", dayId);
-  if (error) { showToast("Error: " + error.message, "error"); return; }
-  document.getElementById(`day-${dayId}`)?.remove();
-  showToast("Day deleted.", "warn");
+async function deleteDay(id) {
+  if (!confirm('Delete this day? Cannot be undone.')) return;
+  await supabaseClient.from('week_days').delete().eq('id', id);
+  $(`day-${id}`)?.remove();
+  showToast('Day deleted.', 'warn');
 }
 
-// ============================================================
-// ── QUIZ MANAGER ─────────────────────────────────────────────
-// ============================================================
-
+// ═══════════════════════════════════════════════════════════════
+// QUIZ SETTINGS
+// ═══════════════════════════════════════════════════════════════
 async function loadQuizConfig() {
-  // Load active config into form
-  const { data: active } = await supabaseClient.from("quiz_config").select("*").eq("is_active", true).maybeSingle();
+  const { data: active } = await supabaseClient.from('quiz_config').select('*').eq('is_active', true).maybeSingle();
   if (active) {
-    document.getElementById("qcWeek").value     = active.week_number;
-    document.getElementById("qcTitle").value    = active.quiz_title || "";
-    document.getElementById("qcUrl").value      = active.quiz_url || "";
-    document.getElementById("qcMaxScore").value = active.max_score || 100;
-    document.getElementById("qcTimeLimit").value= active.time_limit_mins || 30;
-    document.getElementById("qcActive").checked = active.is_active;
-    if (active.opens_at)  document.getElementById("qcOpens").value  = toLocalDatetime(active.opens_at);
-    if (active.closes_at) document.getElementById("qcCloses").value = toLocalDatetime(active.closes_at);
+    $('qcWeek').value   = active.week_number;
+    $('qcTitle').value  = active.quiz_title || '';
+    $('qcTime').value   = active.time_limit_mins || 30;
+    $('qcActive').checked  = active.is_active;
+    $('qcShuffle').checked = active.shuffle_questions ?? true;
+    if (active.opens_at)  $('qcOpens').value  = toLocalDT(active.opens_at);
+    if (active.closes_at) $('qcCloses').value = toLocalDT(active.closes_at);
+    $('quizCfgCard').dataset.editId = active.id;
   }
 
-  // Load all configs into table
-  const { data: all } = await supabaseClient.from("quiz_config").select("*").order("week_number");
-  const wrap = document.getElementById("quizConfigTable");
-  if (!all || !all.length) { wrap.innerHTML = `<div style="color:var(--muted);padding:1rem;">No quiz configs yet.</div>`; return; }
+  const { data: all } = await supabaseClient.from('quiz_config').select('*').order('week_number');
+  const wrap = $('quizCfgTable');
+  if (!all?.length) { wrap.innerHTML = `<p style="color:var(--muted);padding:.75rem;">No quiz configs yet.</p>`; return; }
   wrap.innerHTML = `<table>
-    <thead><tr><th>Week</th><th>Title</th><th>Active</th><th>Opens</th><th>Closes</th><th>Max Score</th><th>Actions</th></tr></thead>
-    <tbody>${all.map(q => `
+    <thead><tr><th>Week</th><th>Title</th><th>Status</th><th>Opens</th><th>Closes</th><th>Time</th><th>Qs</th><th>Actions</th></tr></thead>
+    <tbody id="quizCfgRows">${all.map(q => `
       <tr>
         <td style="font-family:'DM Mono',monospace;font-weight:700;">W${q.week_number}</td>
-        <td>${escHtml(q.quiz_title || "—")}</td>
-        <td><span class="dot ${q.is_active ? "dot-green" : "dot-red"}"></span>${q.is_active ? "Live" : "Off"}</td>
-        <td style="color:var(--muted);font-size:0.78rem;">${q.opens_at ? new Date(q.opens_at).toLocaleString("en-IN") : "—"}</td>
-        <td style="color:var(--muted);font-size:0.78rem;">${q.closes_at ? new Date(q.closes_at).toLocaleString("en-IN") : "—"}</td>
-        <td>${q.max_score}</td>
-        <td><button class="btn btn-outline btn-sm" onclick="loadQuizIntoForm('${q.id}')">Edit</button>
-            <button class="btn btn-danger btn-sm" style="margin-left:0.4rem;" onclick="deleteQuizConfig('${q.id}')">Del</button></td>
-      </tr>`).join("")}
+        <td>${esc(q.quiz_title||'—')}</td>
+        <td><span class="dot ${q.is_active?'dot-g':'dot-r'}"></span>${q.is_active?'Live':'Off'}</td>
+        <td style="color:var(--muted);font-size:.78rem;">${q.opens_at?new Date(q.opens_at).toLocaleString('en-IN'):'—'}</td>
+        <td style="color:var(--muted);font-size:.78rem;">${q.closes_at?new Date(q.closes_at).toLocaleString('en-IN'):'—'}</td>
+        <td>${q.time_limit_mins}m</td>
+        <td id="qCount-${q.week_number}">—</td>
+        <td style="display:flex;gap:.4rem;">
+          <button class="btn btn-outline btn-sm" onclick="loadQCIntoForm('${q.id}')">Edit</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteQC('${q.id}')">Del</button>
+        </td>
+      </tr>`).join('')}
     </tbody></table>`;
+
+  // Fill question counts asynchronously
+  all.forEach(async q => {
+    const { count } = await supabaseClient.from('quiz_questions')
+      .select('*', { count: 'exact', head: true }).eq('week_number', q.week_number);
+    const el = $(`qCount-${q.week_number}`);
+    if (el) el.textContent = count ?? 0;
+  });
 }
 
-async function loadQuizIntoForm(id) {
-  const { data: q } = await supabaseClient.from("quiz_config").select("*").eq("id", id).single();
+async function loadQCIntoForm(id) {
+  const { data: q } = await supabaseClient.from('quiz_config').select('*').eq('id', id).single();
   if (!q) return;
-  document.getElementById("qcWeek").value     = q.week_number;
-  document.getElementById("qcTitle").value    = q.quiz_title || "";
-  document.getElementById("qcUrl").value      = q.quiz_url || "";
-  document.getElementById("qcMaxScore").value = q.max_score || 100;
-  document.getElementById("qcTimeLimit").value= q.time_limit_mins || 30;
-  document.getElementById("qcActive").checked = q.is_active;
-  if (q.opens_at)  document.getElementById("qcOpens").value  = toLocalDatetime(q.opens_at);
-  if (q.closes_at) document.getElementById("qcCloses").value = toLocalDatetime(q.closes_at);
-  document.getElementById("quizConfigCard").dataset.editingId = id;
-  showToast("Config loaded into form — edit and save.", "info");
+  $('qcWeek').value   = q.week_number; $('qcTitle').value  = q.quiz_title || '';
+  $('qcTime').value   = q.time_limit_mins || 30;
+  $('qcActive').checked  = q.is_active; $('qcShuffle').checked = q.shuffle_questions ?? true;
+  if (q.opens_at)  $('qcOpens').value  = toLocalDT(q.opens_at);
+  if (q.closes_at) $('qcCloses').value = toLocalDT(q.closes_at);
+  $('quizCfgCard').dataset.editId = id;
+  showToast('Loaded into form — edit and save.', 'info');
 }
 
 async function saveQuizConfig() {
-  const weekNum   = parseInt(document.getElementById("qcWeek").value);
-  const title     = document.getElementById("qcTitle").value.trim();
-  const url       = document.getElementById("qcUrl").value.trim();
-  const maxScore  = parseFloat(document.getElementById("qcMaxScore").value) || 100;
-  const timeLimit = parseInt(document.getElementById("qcTimeLimit").value) || 30;
-  const isActive  = document.getElementById("qcActive").checked;
-  const opensVal  = document.getElementById("qcOpens").value;
-  const closesVal = document.getElementById("qcCloses").value;
+  const weekNum = parseInt($('qcWeek').value);
+  const title   = $('qcTitle').value.trim();
+  const timeMins= parseInt($('qcTime').value) || 30;
+  const active  = $('qcActive').checked;
+  const shuffle = $('qcShuffle').checked;
+  const opens   = $('qcOpens').value  ? new Date($('qcOpens').value).toISOString()  : null;
+  const closes  = $('qcCloses').value ? new Date($('qcCloses').value).toISOString() : null;
 
-  if (!weekNum || !url) { showToast("Week number and quiz URL are required.", "error"); return; }
+  if (!weekNum) { showToast('Week number is required.', 'error'); return; }
 
-  // If activating, deactivate all others first
-  if (isActive) {
-    await supabaseClient.from("quiz_config").update({ is_active: false }).neq("week_number", weekNum);
+  // Deactivate others if this one is being activated
+  if (active) await supabaseClient.from('quiz_config').update({ is_active: false }).neq('week_number', weekNum);
+
+  const payload = { week_number: weekNum, quiz_title: title, is_active: active,
+    time_limit_mins: timeMins, shuffle_questions: shuffle, opens_at: opens, closes_at: closes,
+    updated_at: new Date().toISOString() };
+
+  const editId = $('quizCfgCard').dataset.editId;
+  const { error } = editId
+    ? await supabaseClient.from('quiz_config').update(payload).eq('id', editId)
+    : await supabaseClient.from('quiz_config').upsert(payload, { onConflict: 'week_number' });
+
+  if (error) { showToast('Save failed: ' + error.message, 'error'); return; }
+  showToast('Quiz config saved!', 'success');
+  delete $('quizCfgCard').dataset.editId;
+  await loadQuizConfig();
+  await loadStats();
+}
+
+async function deleteQC(id) {
+  if (!confirm('Delete this quiz config?')) return;
+  await supabaseClient.from('quiz_config').delete().eq('id', id);
+  showToast('Deleted.', 'warn');
+  await loadQuizConfig();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// QUIZ QUESTIONS
+// ═══════════════════════════════════════════════════════════════
+async function loadQWeekButtons() {
+  const { data } = await supabaseClient.from('quiz_config').select('week_number,quiz_title').order('week_number');
+  const el = $('qWeekBtns');
+  if (!data?.length) {
+    el.innerHTML = `<p style="color:var(--muted);font-size:.85rem;">No quiz weeks configured yet. Set one up in Quiz Settings first.</p>`;
+    return;
+  }
+  el.innerHTML = data.map(q => `
+    <button class="wsb ${activeQWeek === q.week_number ? 'active' : ''}" onclick="selectQWeek(${q.week_number})">
+      Week ${q.week_number}${q.quiz_title ? ' — ' + esc(q.quiz_title) : ''}
+    </button>`).join('');
+}
+
+async function selectQWeek(weekNum) {
+  activeQWeek = weekNum;
+  // Refresh button states
+  document.querySelectorAll('#qWeekBtns .wsb').forEach((b, i) => b.classList.toggle('active', i+1 === weekNum || b.textContent.startsWith(`Week ${weekNum}`)));
+  await loadQuestions(weekNum);
+}
+
+async function loadQuestions(weekNum) {
+  const { data: qs, error } = await supabaseClient
+    .from('quiz_questions').select('*').eq('week_number', weekNum).order('sort_order').order('created_at');
+
+  $('questionsArea').style.display = 'block';
+  const totalMarks = (qs || []).reduce((s, q) => s + (q.marks || 1), 0);
+  $('qCountLabel').textContent = `${qs?.length || 0} question${qs?.length !== 1 ? 's' : ''}`;
+  $('qTotalMarks').textContent = `${totalMarks} total marks`;
+
+  const list = $('questionsList');
+  if (!qs?.length) {
+    list.innerHTML = `<div style="color:var(--muted);padding:2rem;text-align:center;font-size:.88rem;">No questions yet for Week ${weekNum}. Click "+ Add Question" to start.</div>`;
+    return;
+  }
+  list.innerHTML = qs.map((q, i) => renderQCard(q, i + 1)).join('');
+}
+
+function renderQCard(q, num) {
+  const opts = [
+    { key:'A', text: q.option_a }, { key:'B', text: q.option_b },
+    { key:'C', text: q.option_c }, { key:'D', text: q.option_d },
+  ].filter(o => o.text);
+
+  return `
+    <div class="q-card" id="qcard-${q.id}">
+      <div class="q-card-header">
+        <div class="q-num">Q${num}  ·  ${q.marks} mark${q.marks > 1 ? 's' : ''}</div>
+        <div style="display:flex;gap:.4rem;align-items:center;">
+          <span class="correct-badge">✓ ${q.correct_option}</span>
+          <button class="btn btn-outline btn-sm" onclick="editQuestion('${q.id}')">Edit</button>
+          <button class="btn btn-danger btn-sm"  onclick="deleteQuestion('${q.id}')">Del</button>
+        </div>
+      </div>
+      <div style="font-size:.9rem;font-weight:600;margin-bottom:.65rem;line-height:1.5;">${esc(q.question_text)}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.35rem;">
+        ${opts.map(o => `
+          <div style="font-size:.8rem;padding:.4rem .65rem;border-radius:7px;
+            background:${o.key === q.correct_option ? 'rgba(0,212,170,.08)' : 'var(--bg)'};
+            border:1px solid ${o.key === q.correct_option ? 'rgba(0,212,170,.3)' : 'var(--border)'};
+            color:${o.key === q.correct_option ? 'var(--accent)' : 'var(--muted)'};">
+            <span style="font-weight:700;font-family:'DM Mono',monospace;">${o.key}.</span> ${esc(o.text)}
+          </div>`).join('')}
+      </div>
+      ${q.explanation ? `<div style="margin-top:.65rem;font-size:.78rem;color:var(--muted);border-top:1px solid var(--border);padding-top:.65rem;line-height:1.5;">💡 ${esc(q.explanation)}</div>` : ''}
+    </div>`;
+}
+
+function addQuestion() {
+  if (!activeQWeek) { showToast('Select a quiz week first.', 'warn'); return; }
+  openQuestionModal(null);
+}
+
+function editQuestion(id) {
+  const card = $(`qcard-${id}`);
+  // We need the question data — fetch it
+  supabaseClient.from('quiz_questions').select('*').eq('id', id).single()
+    .then(({ data }) => { if (data) openQuestionModal(data); });
+}
+
+function openQuestionModal(q) {
+  let modal = $('qModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'qModal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9000;display:flex;align-items:center;justify-content:center;padding:1rem;overflow-y:auto;';
+    modal.addEventListener('click', e => { if (e.target === modal) closeQModal(); });
+    document.body.appendChild(modal);
+  }
+
+  modal.innerHTML = `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;max-width:620px;width:100%;padding:2rem;max-height:90vh;overflow-y:auto;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;">
+        <div style="font-size:1rem;font-weight:700;">${q ? 'Edit Question' : 'Add Question'} — Week ${activeQWeek}</div>
+        <button onclick="closeQModal()" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:1.3rem;line-height:1;">×</button>
+      </div>
+
+      <div style="margin-bottom:1rem;">
+        <label>Question Text *</label>
+        <textarea id="mqQ" rows="3" placeholder="What is the formula for linear regression?">${esc(q?.question_text||'')}</textarea>
+      </div>
+      <div class="form-row" style="margin-bottom:.75rem;">
+        <div><label>Option A *</label><input type="text" id="mqA" value="${esc(q?.option_a||'')}"></div>
+        <div><label>Option B *</label><input type="text" id="mqB" value="${esc(q?.option_b||'')}"></div>
+      </div>
+      <div class="form-row" style="margin-bottom:.75rem;">
+        <div><label>Option C</label><input type="text" id="mqC" value="${esc(q?.option_c||'')}"></div>
+        <div><label>Option D</label><input type="text" id="mqD" value="${esc(q?.option_d||'')}"></div>
+      </div>
+      <div class="form-row" style="margin-bottom:.75rem;">
+        <div>
+          <label>Correct Option *</label>
+          <select id="mqCorrect">
+            <option value="">Select</option>
+            ${['A','B','C','D'].map(k => `<option value="${k}" ${q?.correct_option===k?'selected':''}>${k}</option>`).join('')}
+          </select>
+        </div>
+        <div><label>Marks</label><input type="number" id="mqMarks" value="${q?.marks||1}" min="1" max="10"></div>
+      </div>
+      <div style="margin-bottom:1.25rem;">
+        <label>Explanation (shown to students after submission)</label>
+        <textarea id="mqExp" rows="2" placeholder="The slope formula is…">${esc(q?.explanation||'')}</textarea>
+      </div>
+      <div style="display:flex;gap:.65rem;justify-content:flex-end;">
+        <button class="btn btn-outline" onclick="closeQModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="saveQuestion(${q ? `'${q.id}'` : 'null'})">
+          ${q ? '💾 Save Changes' : '+ Add Question'}
+        </button>
+      </div>
+    </div>`;
+}
+
+function closeQModal() { $('qModal')?.remove(); }
+
+async function saveQuestion(id) {
+  const qText  = $('mqQ').value.trim();
+  const optA   = $('mqA').value.trim();
+  const optB   = $('mqB').value.trim();
+  const optC   = $('mqC').value.trim();
+  const optD   = $('mqD').value.trim();
+  const correct= $('mqCorrect').value;
+  const marks  = parseInt($('mqMarks').value) || 1;
+  const expl   = $('mqExp').value.trim();
+
+  if (!qText || !optA || !optB || !correct) {
+    showToast('Question, options A & B, and correct answer are required.', 'error'); return;
   }
 
   const payload = {
-    week_number: weekNum, quiz_title: title, quiz_url: url,
-    max_score: maxScore, time_limit_mins: timeLimit, is_active: isActive,
-    opens_at:  opensVal  ? new Date(opensVal).toISOString()  : null,
-    closes_at: closesVal ? new Date(closesVal).toISOString() : null,
-    updated_at: new Date().toISOString(),
+    week_number:   activeQWeek,
+    question_text: qText,
+    option_a: optA, option_b: optB,
+    option_c: optC || null, option_d: optD || null,
+    correct_option: correct,
+    marks, explanation: expl || null,
   };
 
-  const editingId = document.getElementById("quizConfigCard").dataset.editingId;
-  let err;
-  if (editingId) {
-    ({ error: err } = await supabaseClient.from("quiz_config").update(payload).eq("id", editingId));
-  } else {
-    ({ error: err } = await supabaseClient.from("quiz_config").upsert(payload, { onConflict: "week_number" }));
-  }
+  const { error } = id
+    ? await supabaseClient.from('quiz_questions').update(payload).eq('id', id)
+    : await supabaseClient.from('quiz_questions').insert(payload);
 
-  if (err) { showToast("Save failed: " + err.message, "error"); return; }
-  showToast("Quiz config saved!", "success");
-  delete document.getElementById("quizConfigCard").dataset.editingId;
-  await loadQuizConfig();
-  await loadDashboardStats();
+  if (error) { showToast('Save failed: ' + error.message, 'error'); return; }
+  showToast(id ? 'Question updated!' : 'Question added!', 'success');
+  closeQModal();
+  await loadQuestions(activeQWeek);
 }
 
-async function deleteQuizConfig(id) {
-  if (!confirm("Delete this quiz config?")) return;
-  await supabaseClient.from("quiz_config").delete().eq("id", id);
-  showToast("Deleted.", "warn");
-  await loadQuizConfig();
+async function deleteQuestion(id) {
+  if (!confirm('Delete this question? This cannot be undone.')) return;
+  const { error } = await supabaseClient.from('quiz_questions').delete().eq('id', id);
+  if (error) { showToast('Error: ' + error.message, 'error'); return; }
+  showToast('Question deleted.', 'warn');
+  await loadQuestions(activeQWeek);
 }
 
-// ============================================================
-// ── PARTICIPANTS ──────────────────────────────────────────────
-// ============================================================
-let allParticipants = [];
+// ── Bulk CSV import ───────────────────────────────────────────
+function showBulkImport() { $('bulkImportPanel').style.display = 'block'; }
+function hideBulkImport() { $('bulkImportPanel').style.display = 'none'; $('csvContent').value = ''; }
 
+async function importCSV() {
+  if (!activeQWeek) { showToast('Select a quiz week first.', 'warn'); return; }
+  const raw = $('csvContent').value.trim();
+  if (!raw) { showToast('Paste CSV content first.', 'warn'); return; }
+
+  const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+  const questions = [];
+  const errors = [];
+
+  lines.forEach((line, i) => {
+    // Support comma-separated (quoted values OK)
+    const cols = line.match(/(".*?"|[^,]+)(?=,|$)/g)?.map(c => c.replace(/^"|"$/g,'').trim()) || line.split(',').map(s => s.trim());
+    const [question_text, option_a, option_b, option_c, option_d, correct_option, marks, explanation] = cols;
+
+    if (!question_text || !option_a || !option_b || !correct_option) {
+      errors.push(`Row ${i+1}: missing required fields.`); return;
+    }
+    if (!['A','B','C','D'].includes(correct_option.toUpperCase())) {
+      errors.push(`Row ${i+1}: correct_option must be A, B, C, or D.`); return;
+    }
+    questions.push({
+      week_number: activeQWeek, question_text, option_a, option_b,
+      option_c: option_c || null, option_d: option_d || null,
+      correct_option: correct_option.toUpperCase(),
+      marks: parseInt(marks) || 1, explanation: explanation || null,
+    });
+  });
+
+  if (errors.length) { showToast(errors.join(' | '), 'error'); return; }
+  if (!questions.length) { showToast('No valid questions found.', 'warn'); return; }
+
+  const { error } = await supabaseClient.from('quiz_questions').insert(questions);
+  if (error) { showToast('Import failed: ' + error.message, 'error'); return; }
+  showToast(`${questions.length} questions imported!`, 'success');
+  hideBulkImport();
+  await loadQuestions(activeQWeek);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PARTICIPANTS
+// ═══════════════════════════════════════════════════════════════
 async function loadParticipants() {
-  const { data } = await supabaseClient.from("profiles").select("*").order("created_at", { ascending: false });
+  const { data } = await supabaseClient.from('profiles').select('*').order('created_at', { ascending: false });
   allParticipants = data || [];
-
-  const tbody = document.getElementById("participantsBody");
+  const tbody = $('participantsBody');
   if (!allParticipants.length) {
-    tbody.innerHTML = `<tr><td colspan="9" style="color:var(--muted);padding:2rem;text-align:center;">No participants yet.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" style="color:var(--muted);text-align:center;padding:2rem;">No participants yet.</td></tr>`;
     return;
   }
-  tbody.innerHTML = allParticipants.map((p, i) => `
-    <tr>
-      <td style="color:var(--muted);">${i + 1}</td>
-      <td style="font-weight:600;">${escHtml(p.full_name || "—")}</td>
-      <td style="color:var(--muted);font-size:0.8rem;">${escHtml(p.email)}</td>
-      <td>${escHtml(p.college || "—")}</td>
-      <td>${escHtml(p.year_of_study || "—")}</td>
-      <td>${escHtml(p.branch || "—")}</td>
-      <td style="color:var(--muted);">${escHtml(p.phone || "—")}</td>
-      <td style="color:var(--muted);font-size:0.78rem;">${new Date(p.created_at).toLocaleDateString("en-IN", {day:"numeric",month:"short",year:"numeric"})}</td>
-      <td>${p.is_admin ? '<span style="color:var(--danger);font-weight:700;">Admin</span>' : '—'}</td>
-    </tr>`).join("");
+  tbody.innerHTML = allParticipants.map((p, i) => `<tr>
+    <td style="color:var(--muted);">${i+1}</td>
+    <td style="font-weight:600;">${esc(p.full_name||'—')}</td>
+    <td style="color:var(--muted);font-size:.78rem;">${esc(p.email)}</td>
+    <td>${esc(p.college||'—')}</td>
+    <td>${esc(p.year_of_study||'—')}</td>
+    <td>${esc(p.branch||'—')}</td>
+    <td style="color:var(--muted);">${esc(p.phone||'—')}</td>
+    <td style="color:var(--muted);font-size:.78rem;">${new Date(p.created_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})}</td>
+  </tr>`).join('');
 }
 
-function exportParticipantsCSV() {
-  if (!allParticipants.length) { showToast("No data to export.", "warn"); return; }
-  const headers = ["Name","Email","College","Year","Branch","Phone","Roll Number","Joined"];
-  const rows = allParticipants.map(p => [
-    p.full_name||"", p.email, p.college||"", p.year_of_study||"", p.branch||"", p.phone||"", p.roll_number||"",
-    new Date(p.created_at).toLocaleDateString("en-IN")
+function exportParticipants() {
+  if (!allParticipants.length) { showToast('No data.', 'warn'); return; }
+  downloadCSV('participants.csv', [
+    ['Name','Email','College','Year','Branch','Phone','Roll Number','Joined'],
+    ...allParticipants.map(p => [p.full_name||'',p.email,p.college||'',p.year_of_study||'',p.branch||'',p.phone||'',p.roll_number||'',new Date(p.created_at).toLocaleDateString('en-IN')])
   ]);
-  downloadCSV("participants.csv", [headers, ...rows]);
 }
 
-// ============================================================
-// ── RESULTS ───────────────────────────────────────────────────
-// ============================================================
-let allResults = [];
-
+// ═══════════════════════════════════════════════════════════════
+// RESULTS
+// ═══════════════════════════════════════════════════════════════
 async function loadResults() {
-  const weekFilter = document.getElementById("resultsWeekFilter")?.value;
-  let query = supabaseClient.from("quiz_scores").select("*, profiles(full_name, email, college)").order("submitted_at", { ascending: false });
-  if (weekFilter) query = query.eq("week_number", parseInt(weekFilter));
-  const { data } = await query;
+  const wf = $('resultWeekFilter')?.value;
+  let q = supabaseClient.from('quiz_scores').select('*, profiles(full_name,email,college)').order('submitted_at', { ascending: false });
+  if (wf) q = q.eq('week_number', parseInt(wf));
+  const { data } = await q;
   allResults = data || [];
 
-  const tbody = document.getElementById("resultsBody");
+  const tbody = $('resultsBody');
   if (!allResults.length) {
-    tbody.innerHTML = `<tr><td colspan="11" style="color:var(--muted);padding:2rem;text-align:center;">No results found.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="12" style="color:var(--muted);text-align:center;padding:2rem;">No results.</td></tr>`;
     return;
   }
 
   tbody.innerHTML = allResults.map(r => {
-    const pct = r.max_score > 0 ? Math.round((r.score / r.max_score) * 100) : 0;
-    const pctColor = pct >= 80 ? "color:var(--accent)" : pct >= 50 ? "color:var(--warn)" : "color:var(--danger)";
-    return `
-      <tr>
-        <td style="font-weight:600;">${escHtml(r.profiles?.full_name || "—")}</td>
-        <td style="color:var(--muted);font-size:0.78rem;">${escHtml(r.profiles?.email || r.email || "—")}</td>
-        <td style="color:var(--muted);">${escHtml(r.profiles?.college || "—")}</td>
-        <td style="font-family:'DM Mono',monospace;font-weight:700;">W${r.week_number}</td>
-        <td style="font-weight:700;">${r.score}</td>
-        <td style="color:var(--muted);">${r.max_score}</td>
-        <td style="${pctColor};font-weight:700;">${pct}%</td>
-        <td style="${r.tab_switches > 0 ? "color:var(--warn);" : "color:var(--muted);"}">${r.tab_switches || 0}</td>
-        <td style="${r.fullscreen_exits > 0 ? "color:var(--danger);" : "color:var(--muted);"}">${r.fullscreen_exits || 0}</td>
-        <td style="color:var(--muted);font-size:0.78rem;">${new Date(r.submitted_at).toLocaleDateString("en-IN",{day:"numeric",month:"short"})}</td>
-        <td>${r.answers && r.answers.length ? `<button class="btn btn-outline btn-sm" onclick='showAdminAnswerDetail(${JSON.stringify(r)})'>Answers</button>` : "—"}</td>
-      </tr>`;
-  }).join("");
+    const pct    = Number(r.percentage) || 0;
+    const pClr   = pct >= 80 ? 'var(--accent)' : pct >= 50 ? 'var(--warn)' : 'var(--danger)';
+    const answers= Array.isArray(r.answers) ? r.answers : [];
+    const correct= answers.filter(a => a.is_correct).length;
+    return `<tr>
+      <td style="font-weight:600;">${esc(r.profiles?.full_name||'—')}</td>
+      <td style="color:var(--muted);font-size:.78rem;">${esc(r.profiles?.email||r.email||'—')}</td>
+      <td style="color:var(--muted);">${esc(r.profiles?.college||'—')}</td>
+      <td style="font-family:'DM Mono',monospace;font-weight:700;">W${r.week_number}</td>
+      <td style="font-weight:700;">${r.score}</td>
+      <td style="color:var(--muted);">${r.max_score}</td>
+      <td style="font-weight:700;color:${pClr};">${pct}%</td>
+      <td style="color:var(--muted);">${correct}/${answers.length||'—'}</td>
+      <td style="color:${r.tab_switches>0?'var(--warn)':'var(--muted)'};">${r.tab_switches||0}</td>
+      <td style="color:${r.fullscreen_exits>0?'var(--danger)':'var(--muted)'};">${r.fullscreen_exits||0}</td>
+      <td style="color:var(--muted);font-size:.78rem;">${new Date(r.submitted_at).toLocaleDateString('en-IN',{day:'numeric',month:'short'})}</td>
+      <td>${answers.length ? `<button class="btn btn-outline btn-sm" onclick='showAnswerDetail(${JSON.stringify(r)})'>Answers</button>` : '—'}</td>
+    </tr>`;
+  }).join('');
 }
 
-function showAdminAnswerDetail(r) {
+function showAnswerDetail(r) {
   const answers = Array.isArray(r.answers) ? r.answers : [];
-  if (!answers.length) { showToast("No detailed answers stored.", "warn"); return; }
-
-  let modal = document.getElementById("adminAnswerModal");
-  if (!modal) {
-    modal = document.createElement("div");
-    modal.id = "adminAnswerModal";
-    modal.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9000;display:flex;align-items:center;justify-content:center;padding:1rem;";
-    modal.addEventListener("click", e => { if (e.target === modal) modal.remove(); });
-    document.body.appendChild(modal);
-  }
-
   const correct = answers.filter(a => a.is_correct).length;
-  modal.innerHTML = `
-    <div style="background:#111827;border:1px solid #1e2d40;border-radius:16px;max-width:640px;width:100%;max-height:85vh;overflow-y:auto;padding:2rem;">
+
+  let m = $('ansModal');
+  if (!m) {
+    m = document.createElement('div');
+    m.id = 'ansModal';
+    m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:9000;display:flex;align-items:center;justify-content:center;padding:1rem;overflow-y:auto;';
+    m.addEventListener('click', e => { if (e.target === m) m.remove(); });
+    document.body.appendChild(m);
+  }
+  m.innerHTML = `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;max-width:640px;width:100%;max-height:88vh;overflow-y:auto;padding:2rem;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;">
         <div>
-          <div style="font-size:1rem;font-weight:700;">${escHtml(r.profiles?.full_name || r.email)} — Week ${r.week_number}</div>
-          <div style="font-size:0.82rem;color:#64748b;margin-top:0.2rem;">${correct}/${answers.length} correct · Score: ${r.score}/${r.max_score}</div>
+          <div style="font-weight:700;font-size:1rem;">${esc(r.profiles?.full_name||r.email)} — Week ${r.week_number}</div>
+          <div style="font-size:.8rem;color:var(--muted);">${correct}/${answers.length} correct · Score: ${r.score}/${r.max_score} · ${r.percentage}%</div>
         </div>
-        <button onclick="document.getElementById('adminAnswerModal').remove()" style="background:none;border:none;cursor:pointer;color:#64748b;font-size:1.3rem;line-height:1;">×</button>
+        <button onclick="document.getElementById('ansModal').remove()" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:1.3rem;">×</button>
       </div>
       ${answers.map((a, i) => `
-        <div style="border:1px solid ${a.is_correct ? "rgba(0,212,170,0.2)" : "rgba(248,113,113,0.2)"};border-radius:10px;padding:0.85rem;margin-bottom:0.6rem;background:${a.is_correct ? "rgba(0,212,170,0.03)" : "rgba(248,113,113,0.03)"};">
-          <div style="font-size:0.75rem;font-weight:700;color:#64748b;margin-bottom:0.3rem;">Q${i+1} — ${a.is_correct ? "✓ Correct" : "✗ Wrong"}</div>
-          <div style="font-size:0.85rem;margin-bottom:0.4rem;line-height:1.5;">${escHtml(a.question || "Question")}</div>
-          <div style="font-size:0.78rem;color:#94a3b8;">
-            Chosen: <span style="color:${a.is_correct ? "#00d4aa" : "#f87171"};font-weight:600;">${escHtml(a.chosen || "—")}</span>
-            ${!a.is_correct && a.correct ? ` · Correct: <span style="color:#00d4aa;font-weight:600;">${escHtml(a.correct)}</span>` : ""}
+        <div style="border:1px solid ${a.is_correct?'rgba(0,212,170,.25)':'rgba(248,113,113,.25)'};border-radius:10px;padding:.9rem 1rem;margin-bottom:.55rem;background:${a.is_correct?'rgba(0,212,170,.03)':'rgba(248,113,113,.03)'};">
+          <div style="font-size:.72rem;font-weight:700;color:var(--muted);margin-bottom:.35rem;">Q${i+1} — ${a.is_correct?'✓ Correct':'✗ Wrong'}</div>
+          <div style="font-size:.86rem;margin-bottom:.45rem;line-height:1.5;">${esc(a.question)}</div>
+          <div style="font-size:.78rem;">
+            Chosen: <span style="font-weight:700;color:${a.is_correct?'var(--accent)':'var(--danger)'};">${esc(a.chosen)}</span>
+            ${!a.is_correct?` · Correct: <span style="font-weight:700;color:var(--accent);">${esc(a.correct)}</span>`:''}
           </div>
-        </div>`).join("")}
+          ${a.explanation?`<div style="font-size:.76rem;color:var(--muted);margin-top:.4rem;font-style:italic;">💡 ${esc(a.explanation)}</div>`:''}
+        </div>`).join('')}
     </div>`;
 }
 
-function exportResultsCSV() {
-  if (!allResults.length) { showToast("No results to export.", "warn"); return; }
-  const headers = ["Name","Email","College","Week","Score","Max Score","%","Tab Switches","Fullscreen Exits","Submitted"];
-  const rows = allResults.map(r => {
-    const pct = r.max_score > 0 ? Math.round((r.score / r.max_score) * 100) : 0;
-    return [
-      r.profiles?.full_name||"", r.profiles?.email||r.email||"", r.profiles?.college||"",
-      r.week_number, r.score, r.max_score, pct+"%",
-      r.tab_switches||0, r.fullscreen_exits||0,
-      new Date(r.submitted_at).toLocaleString("en-IN")
-    ];
-  });
-  downloadCSV("quiz_results.csv", [headers, ...rows]);
+function exportResults() {
+  if (!allResults.length) { showToast('No results to export.', 'warn'); return; }
+  downloadCSV('quiz_results.csv', [
+    ['Name','Email','College','Week','Score','Max','%','Correct','Tab Switches','FS Exits','Submitted'],
+    ...allResults.map(r => {
+      const answers = Array.isArray(r.answers) ? r.answers : [];
+      return [r.profiles?.full_name||'',r.profiles?.email||r.email||'',r.profiles?.college||'',
+        r.week_number,r.score,r.max_score,r.percentage+'%',
+        answers.filter(a=>a.is_correct).length+'/'+answers.length,
+        r.tab_switches||0,r.fullscreen_exits||0,new Date(r.submitted_at).toLocaleString('en-IN')];
+    })
+  ]);
 }
 
-// ============================================================
-// ── VIOLATIONS ────────────────────────────────────────────────
-// ============================================================
+// ═══════════════════════════════════════════════════════════════
+// VIOLATIONS
+// ═══════════════════════════════════════════════════════════════
 async function loadViolations() {
   const { data } = await supabaseClient
-    .from("quiz_violations")
-    .select("*, profiles(full_name, email)")
-    .order("occurred_at", { ascending: false })
-    .limit(200);
+    .from('quiz_violations').select('*, profiles(full_name,email)')
+    .order('occurred_at', { ascending: false }).limit(300);
 
-  const tbody = document.getElementById("violationsBody");
-  if (!data || !data.length) {
-    tbody.innerHTML = `<tr><td colspan="5" style="color:var(--muted);padding:2rem;text-align:center;">No violations recorded.</td></tr>`;
+  const tbody = $('violationsBody');
+  if (!data?.length) {
+    tbody.innerHTML = `<tr><td colspan="5" style="color:var(--muted);text-align:center;padding:2rem;">No violations recorded.</td></tr>`;
     return;
   }
+  const labels = { tab_switch:'Tab Switch', fullscreen_exit:'Fullscreen Exit', window_blur:'Window Blur', devtools:'DevTools' };
+  const colors = { tab_switch:'var(--warn)', fullscreen_exit:'var(--danger)', window_blur:'var(--muted)', devtools:'var(--danger)' };
 
-  const typeLabels = {
-    tab_switch:     "Tab Switch",
-    fullscreen_exit:"Fullscreen Exit",
-    window_blur:    "Window Blur",
-    devtools:       "DevTools Open"
-  };
-  const typeColors = {
-    tab_switch:"var(--warn)",
-    fullscreen_exit:"var(--danger)",
-    window_blur:"var(--muted)",
-    devtools:"var(--danger)"
-  };
-
-  tbody.innerHTML = data.map(v => `
-    <tr>
-      <td style="font-weight:600;">${escHtml(v.profiles?.full_name || "—")}</td>
-      <td style="color:var(--muted);font-size:0.78rem;">${escHtml(v.profiles?.email || "—")}</td>
-      <td style="font-family:'DM Mono',monospace;">W${v.week_number}</td>
-      <td style="font-weight:600;color:${typeColors[v.violation_type]||"var(--muted)"};">${typeLabels[v.violation_type] || v.violation_type}</td>
-      <td style="color:var(--muted);font-size:0.78rem;">${new Date(v.occurred_at).toLocaleString("en-IN")}</td>
-    </tr>`).join("");
+  tbody.innerHTML = data.map(v => `<tr>
+    <td style="font-weight:600;">${esc(v.profiles?.full_name||'—')}</td>
+    <td style="color:var(--muted);font-size:.78rem;">${esc(v.profiles?.email||'—')}</td>
+    <td style="font-family:'DM Mono',monospace;">W${v.week_number}</td>
+    <td style="font-weight:600;color:${colors[v.violation_type]||'var(--muted)'};">${labels[v.violation_type]||v.violation_type}</td>
+    <td style="color:var(--muted);font-size:.78rem;">${new Date(v.occurred_at).toLocaleString('en-IN')}</td>
+  </tr>`).join('');
 }
 
-// ============================================================
-// ── ANNOUNCEMENTS ─────────────────────────────────────────────
-// ============================================================
+// ═══════════════════════════════════════════════════════════════
+// ANNOUNCEMENTS
+// ═══════════════════════════════════════════════════════════════
 async function loadAnnouncements() {
-  const { data } = await supabaseClient.from("announcements").select("*").order("created_at", { ascending: false });
-  const list = document.getElementById("annList");
-  if (!data || !data.length) { list.innerHTML = `<div style="color:var(--muted);padding:1rem;">No announcements yet.</div>`; return; }
-
+  const { data } = await supabaseClient.from('announcements').select('*').order('created_at', { ascending: false });
+  const list = $('annList');
+  if (!data?.length) { list.innerHTML = `<div style="color:var(--muted);">No announcements yet.</div>`; return; }
   list.innerHTML = data.map(a => `
-    <div style="border:1px solid var(--border);border-radius:10px;padding:1rem;margin-bottom:0.75rem;display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;">
+    <div style="border:1px solid var(--border);border-radius:10px;padding:.9rem 1rem;margin-bottom:.6rem;display:flex;align-items:flex-start;justify-content:space-between;gap:.75rem;">
       <div style="flex:1;">
-        <div style="font-weight:700;margin-bottom:0.25rem;display:flex;align-items:center;gap:0.5rem;">
-          ${escHtml(a.title)}
-          ${a.is_active ? '<span style="background:rgba(0,212,170,0.1);color:var(--accent);border-radius:5px;padding:0.1rem 0.4rem;font-size:0.65rem;font-weight:700;">LIVE</span>' : '<span style="background:var(--surface2);color:var(--muted);border-radius:5px;padding:0.1rem 0.4rem;font-size:0.65rem;">OFF</span>'}
-          ${a.pinned ? '<span style="background:rgba(251,191,36,0.1);color:var(--warn);border-radius:5px;padding:0.1rem 0.4rem;font-size:0.65rem;font-weight:700;">PINNED</span>' : ""}
+        <div style="font-weight:700;display:flex;align-items:center;gap:.45rem;flex-wrap:wrap;margin-bottom:.2rem;">
+          ${esc(a.title)}
+          ${a.is_active?'<span style="background:rgba(0,212,170,.1);color:var(--accent);border-radius:5px;padding:.1rem .4rem;font-size:.62rem;font-weight:700;">LIVE</span>':'<span style="background:var(--surface2);color:var(--muted);border-radius:5px;padding:.1rem .4rem;font-size:.62rem;">OFF</span>'}
+          ${a.pinned?'<span style="background:rgba(251,191,36,.1);color:var(--warn);border-radius:5px;padding:.1rem .4rem;font-size:.62rem;font-weight:700;">PINNED</span>':''}
         </div>
-        ${a.body ? `<div style="color:var(--muted);font-size:0.82rem;">${escHtml(a.body)}</div>` : ""}
-        <div style="font-size:0.72rem;color:var(--muted);margin-top:0.4rem;">${new Date(a.created_at).toLocaleString("en-IN")}</div>
+        ${a.body?`<div style="font-size:.8rem;color:var(--muted);">${esc(a.body)}</div>`:''}
+        <div style="font-size:.7rem;color:var(--muted);margin-top:.3rem;">${new Date(a.created_at).toLocaleString('en-IN')}</div>
       </div>
-      <div style="display:flex;gap:0.4rem;flex-shrink:0;">
-        <button class="btn btn-outline btn-sm" onclick="toggleAnn('${a.id}', ${!a.is_active})">${a.is_active ? "Deactivate" : "Activate"}</button>
+      <div style="display:flex;gap:.35rem;flex-shrink:0;">
+        <button class="btn btn-outline btn-sm" onclick="toggleAnn('${a.id}',${!a.is_active})">${a.is_active?'Deactivate':'Activate'}</button>
         <button class="btn btn-danger btn-sm" onclick="deleteAnn('${a.id}')">Del</button>
       </div>
-    </div>`).join("");
+    </div>`).join('');
 }
 
-async function createAnnouncement() {
-  const title  = document.getElementById("annTitle").value.trim();
-  const body   = document.getElementById("annBody").value.trim();
-  const linksRaw = document.getElementById("annLinks").value.trim();
-  const active = document.getElementById("annActive").checked;
-  const pinned = document.getElementById("annPinned").checked;
-
-  if (!title) { showToast("Title is required.", "error"); return; }
-
-  const links = linksRaw ? linksRaw.split("\n").map(l => {
-    const [label, ...urlParts] = l.split("|");
-    return { label: label.trim(), url: urlParts.join("|").trim() };
+async function createAnn() {
+  const title = $('annTitle').value.trim();
+  if (!title) { showToast('Title required.', 'error'); return; }
+  const linksRaw = $('annLinks').value.trim();
+  const links = linksRaw ? linksRaw.split('\n').map(l => {
+    const [label, ...rest] = l.split('|');
+    return { label: label.trim(), url: rest.join('|').trim() };
   }).filter(l => l.label && l.url) : [];
 
-  const { error } = await supabaseClient.from("announcements").insert({ title, body: body||null, links, is_active: active, pinned });
-  if (error) { showToast("Error: " + error.message, "error"); return; }
-  showToast("Announcement posted!", "success");
-  document.getElementById("annTitle").value = "";
-  document.getElementById("annBody").value  = "";
-  document.getElementById("annLinks").value = "";
+  const { error } = await supabaseClient.from('announcements').insert({
+    title, body: $('annBody').value.trim() || null, links,
+    is_active: $('annActive').checked, pinned: $('annPinned').checked,
+  });
+  if (error) { showToast('Error: ' + error.message, 'error'); return; }
+  showToast('Announcement posted!', 'success');
+  $('annTitle').value = ''; $('annBody').value = ''; $('annLinks').value = '';
   await loadAnnouncements();
 }
 
 async function toggleAnn(id, active) {
-  await supabaseClient.from("announcements").update({ is_active: active }).eq("id", id);
+  await supabaseClient.from('announcements').update({ is_active: active }).eq('id', id);
   await loadAnnouncements();
 }
-
 async function deleteAnn(id) {
-  if (!confirm("Delete this announcement?")) return;
-  await supabaseClient.from("announcements").delete().eq("id", id);
-  showToast("Deleted.", "warn");
+  if (!confirm('Delete announcement?')) return;
+  await supabaseClient.from('announcements').delete().eq('id', id);
+  showToast('Deleted.', 'warn');
   await loadAnnouncements();
-}
-
-// ============================================================
-// ── Utilities ─────────────────────────────────────────────────
-// ============================================================
-function escHtml(str) {
-  return String(str || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
-}
-
-function toLocalDatetime(iso) {
-  const d = new Date(iso);
-  const pad = n => String(n).padStart(2,"0");
-  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-function downloadCSV(filename, rows) {
-  const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(",")).join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement("a");
-  a.href = url; a.download = filename; a.click();
-  URL.revokeObjectURL(url);
 }

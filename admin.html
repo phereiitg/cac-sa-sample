@@ -10,83 +10,110 @@
 <script src="js/auth.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
-:root{--bg:#0b0f1a;--surface:#111827;--surface2:#1a2235;--border:#1e2d40;--accent:#00d4aa;--accent2:#3b82f6;--text:#e2e8f0;--muted:#64748b;--danger:#f87171;--warn:#fbbf24;--sidebar-w:220px;}
-body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;}
+:root{--bg:#0b0f1a;--surface:#111827;--surface2:#1a2235;--border:#1e2d40;
+  --accent:#00d4aa;--accent2:#3b82f6;--text:#e2e8f0;--muted:#64748b;
+  --danger:#f87171;--warn:#fbbf24;--sidebar-w:220px;}
+body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
 
 /* Sidebar */
-.sidebar{position:fixed;top:0;left:0;width:var(--sidebar-w);height:100vh;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;z-index:100;}
-.sidebar-logo{padding:1.25rem 1rem;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:0.6rem;}
-.logo-box{width:32px;height:32px;background:var(--danger);border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:0.7rem;color:#fff;flex-shrink:0;}
-.admin-badge{background:rgba(248,113,113,0.1);color:var(--danger);border:1px solid rgba(248,113,113,0.3);border-radius:6px;padding:0.15rem 0.5rem;font-size:0.65rem;font-weight:700;letter-spacing:0.05em;}
-.sidebar-nav{flex:1;padding:0.75rem 0.6rem;display:flex;flex-direction:column;gap:0.15rem;overflow-y:auto;}
-.nav-item{display:flex;align-items:center;gap:0.6rem;padding:0.55rem 0.75rem;border-radius:9px;cursor:pointer;font-size:0.84rem;font-weight:500;color:var(--muted);transition:all 0.15s;background:none;border:none;width:100%;text-align:left;}
+.sidebar{position:fixed;top:0;left:0;width:var(--sidebar-w);height:100vh;
+  background:var(--surface);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;z-index:100;}
+.sidebar-logo{padding:1.1rem .9rem;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:.6rem;}
+.logo-box{width:32px;height:32px;background:var(--danger);border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.7rem;color:#fff;flex-shrink:0;}
+.admin-badge{background:rgba(248,113,113,.1);color:var(--danger);border:1px solid rgba(248,113,113,.3);border-radius:6px;padding:.12rem .45rem;font-size:.62rem;font-weight:700;letter-spacing:.05em;}
+.sidebar-nav{flex:1;padding:.65rem .55rem;display:flex;flex-direction:column;gap:.12rem;overflow-y:auto;}
+.nav-item{display:flex;align-items:center;gap:.55rem;padding:.52rem .7rem;border-radius:9px;cursor:pointer;
+  font-size:.83rem;font-weight:500;color:var(--muted);transition:all .15s;background:none;border:none;width:100%;text-align:left;}
 .nav-item:hover{background:var(--surface2);color:var(--text);}
-.nav-item.active{background:rgba(248,113,113,0.1);color:var(--danger);}
-.sidebar-footer{padding:0.75rem;border-top:1px solid var(--border);}
-.user-pill{display:flex;align-items:center;gap:0.6rem;padding:0.5rem 0.65rem;border-radius:9px;background:var(--surface2);font-size:0.78rem;}
-.btn-signout{background:none;border:none;cursor:pointer;color:var(--muted);transition:color 0.15s;display:flex;margin-left:auto;}
-.btn-signout:hover{color:var(--danger);}
+.nav-item.active{background:rgba(248,113,113,.1);color:var(--danger);}
+.nav-sep{height:1px;background:var(--border);margin:.4rem 0;}
+.sidebar-footer{padding:.65rem;border-top:1px solid var(--border);}
+.user-pill{display:flex;align-items:center;gap:.55rem;padding:.45rem .6rem;border-radius:9px;background:var(--surface2);font-size:.78rem;}
+.btn-so{background:none;border:none;cursor:pointer;color:var(--muted);transition:color .15s;display:flex;margin-left:auto;}
+.btn-so:hover{color:var(--danger);}
 
 /* Main */
-.main{margin-left:var(--sidebar-w);padding:0;min-height:100vh;}
-.main-header{padding:1rem 2rem;border-bottom:1px solid var(--border);background:var(--surface);display:flex;align-items:center;gap:1rem;position:sticky;top:0;z-index:50;}
+.main{margin-left:var(--sidebar-w);min-height:100vh;}
+.main-header{padding:.9rem 2rem;border-bottom:1px solid var(--border);background:var(--surface);
+  display:flex;align-items:center;gap:.75rem;position:sticky;top:0;z-index:50;}
 .main-header h1{font-size:1rem;font-weight:700;}
 .tab-panel{display:none;padding:2rem;}
 .tab-panel.active{display:block;}
-.page-title{font-size:1.3rem;font-weight:700;margin-bottom:0.3rem;}
-.page-sub{color:var(--muted);font-size:0.85rem;margin-bottom:1.5rem;}
+.page-title{font-size:1.25rem;font-weight:700;margin-bottom:.3rem;}
+.page-sub{color:var(--muted);font-size:.85rem;margin-bottom:1.5rem;}
 
 /* Cards */
 .card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:1.5rem;margin-bottom:1.5rem;}
-.card-title{font-size:0.9rem;font-weight:700;margin-bottom:1rem;}
-.form-row{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem;}
+.card-title{font-size:.88rem;font-weight:700;margin-bottom:1rem;display:flex;align-items:center;gap:.5rem;}
+
+/* Form */
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:.85rem;margin-bottom:.85rem;}
 .form-row.full{grid-template-columns:1fr;}
 .form-row.three{grid-template-columns:1fr 1fr 1fr;}
-label{display:block;font-size:0.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.35rem;}
-input[type=text],input[type=url],input[type=number],input[type=datetime-local],select,textarea{
-  width:100%;background:var(--bg);border:1px solid var(--border);border-radius:9px;
-  padding:0.6rem 0.85rem;color:var(--text);font-family:'Outfit',sans-serif;font-size:0.88rem;
-  outline:none;transition:border-color 0.15s;
-}
+.form-row.four{grid-template-columns:1fr 1fr 1fr 1fr;}
+label{display:block;font-size:.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.3rem;}
+input,select,textarea{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:9px;
+  padding:.58rem .82rem;color:var(--text);font-family:'Outfit',sans-serif;font-size:.87rem;
+  outline:none;transition:border-color .15s;}
 input:focus,select:focus,textarea:focus{border-color:var(--accent);}
-textarea{resize:vertical;min-height:80px;}
-.toggle{display:flex;align-items:center;gap:0.6rem;cursor:pointer;font-size:0.88rem;font-weight:500;}
-.toggle input{width:auto;}
+select option{background:var(--surface);}
+textarea{resize:vertical;min-height:70px;}
+.toggle{display:flex;align-items:center;gap:.55rem;cursor:pointer;font-size:.87rem;font-weight:500;}
+.toggle input{width:auto;accent-color:var(--accent);}
 
-.btn{display:inline-flex;align-items:center;gap:0.4rem;padding:0.6rem 1.2rem;border-radius:9px;border:none;font-family:'Outfit',sans-serif;font-size:0.85rem;font-weight:600;cursor:pointer;transition:all 0.15s;}
+/* Buttons */
+.btn{display:inline-flex;align-items:center;gap:.4rem;padding:.55rem 1.1rem;border-radius:9px;border:none;
+  font-family:'Outfit',sans-serif;font-size:.84rem;font-weight:600;cursor:pointer;transition:all .15s;}
 .btn-primary{background:var(--accent);color:#0b0f1a;}
-.btn-primary:hover{opacity:0.9;}
+.btn-primary:hover{opacity:.9;}
+.btn-blue{background:var(--accent2);color:#fff;}
+.btn-blue:hover{opacity:.9;}
 .btn-danger{background:var(--danger);color:#fff;}
-.btn-danger:hover{opacity:0.9;}
+.btn-danger:hover{opacity:.9;}
 .btn-outline{background:transparent;border:1px solid var(--border);color:var(--muted);}
 .btn-outline:hover{border-color:var(--accent);color:var(--accent);}
-.btn-sm{padding:0.35rem 0.75rem;font-size:0.78rem;}
-.btn:disabled{opacity:0.4;pointer-events:none;}
+.btn-sm{padding:.32rem .7rem;font-size:.76rem;}
+.btn:disabled{opacity:.35;pointer-events:none;}
 
 /* Table */
 .table-wrap{overflow-x:auto;}
-table{width:100%;border-collapse:collapse;font-size:0.85rem;}
-th{background:var(--surface2);padding:0.65rem 1rem;text-align:left;font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;font-weight:600;white-space:nowrap;}
-td{padding:0.75rem 1rem;border-bottom:1px solid var(--border);}
+table{width:100%;border-collapse:collapse;font-size:.84rem;}
+th{background:var(--surface2);padding:.6rem .9rem;text-align:left;font-size:.68rem;
+  color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:600;white-space:nowrap;}
+td{padding:.7rem .9rem;border-bottom:1px solid var(--border);vertical-align:middle;}
 tr:last-child td{border-bottom:none;}
-tr:hover td{background:rgba(255,255,255,0.01);}
-
-/* Week day editor */
-.day-row{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:1rem;margin-bottom:0.75rem;}
-.day-row-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;}
-.day-row-title{font-weight:700;font-size:0.88rem;color:var(--accent);}
+tr:hover td{background:rgba(255,255,255,.008);}
 
 /* Stats strip */
 .stats-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1.5rem;}
-.stat-mini{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1rem 1.25rem;}
-.stat-mini-label{font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.3rem;}
-.stat-mini-value{font-size:1.5rem;font-weight:700;}
+.stat-mini{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1rem 1.2rem;}
+.sml{font-size:.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.3rem;}
+.smv{font-size:1.45rem;font-weight:700;}
 
-/* Status dot */
-.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:0.4rem;}
-.dot-green{background:var(--accent);}
-.dot-red{background:var(--danger);}
-.dot-yellow{background:var(--warn);}
+/* Week selector */
+.week-selector{display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1.5rem;}
+.wsb{padding:.45rem 1rem;border-radius:9px;border:1px solid var(--border);background:none;
+  color:var(--muted);font-family:'Outfit',sans-serif;font-size:.83rem;font-weight:600;cursor:pointer;transition:all .15s;}
+.wsb:hover{border-color:var(--accent2);color:var(--text);}
+.wsb.active{background:var(--accent2);border-color:var(--accent2);color:#fff;}
+
+/* Day card */
+.day-card{background:var(--surface2);border:1px solid var(--border);border-radius:11px;padding:1.1rem;margin-bottom:.75rem;}
+.day-card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:.85rem;}
+.day-card-title{font-weight:700;font-size:.88rem;color:var(--accent);}
+
+/* Question card */
+.q-card{background:var(--surface2);border:1px solid var(--border);border-radius:11px;padding:1.25rem;margin-bottom:.75rem;position:relative;}
+.q-card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;}
+.q-num{font-family:'DM Mono',monospace;font-size:.78rem;font-weight:700;color:var(--accent);}
+.correct-badge{font-size:.72rem;font-weight:700;padding:.2rem .55rem;border-radius:6px;background:rgba(0,212,170,.1);color:var(--accent);}
+
+/* Dot */
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:.35rem;vertical-align:middle;}
+.dot-g{background:var(--accent);}
+.dot-r{background:var(--danger);}
+.dot-y{background:var(--warn);}
 </style>
 </head>
 <body>
@@ -94,27 +121,29 @@ tr:hover td{background:rgba(255,255,255,0.01);}
 <aside class="sidebar">
   <div class="sidebar-logo">
     <div class="logo-box">ADM</div>
-    <div>
-      <div style="font-size:0.8rem;font-weight:700;">Admin Panel</div>
-      <div class="admin-badge">ADMIN</div>
-    </div>
+    <div><div style="font-size:.78rem;font-weight:700;margin-bottom:.2rem;">Admin Panel</div>
+    <div class="admin-badge">ADMIN</div></div>
   </div>
   <nav class="sidebar-nav">
-    <button class="nav-item active" data-tab="dashboard" onclick="switchTab('dashboard')">📊 Dashboard</button>
-    <button class="nav-item" data-tab="content" onclick="switchTab('content')">📚 Course Content</button>
-    <button class="nav-item" data-tab="quiz" onclick="switchTab('quiz')">🎯 Quiz Manager</button>
-    <button class="nav-item" data-tab="participants" onclick="switchTab('participants')">👥 Participants</button>
-    <button class="nav-item" data-tab="results" onclick="switchTab('results')">📈 Quiz Results</button>
-    <button class="nav-item" data-tab="violations" onclick="switchTab('violations')">⚠ Violations</button>
-    <button class="nav-item" data-tab="announcements" onclick="switchTab('announcements')">📢 Announcements</button>
+    <button class="nav-item active" data-tab="dashboard"     onclick="switchTab('dashboard')">📊 Dashboard</button>
+    <button class="nav-item"        data-tab="content"       onclick="switchTab('content')">📚 Course Content</button>
+    <div class="nav-sep"></div>
+    <button class="nav-item"        data-tab="quiz"          onclick="switchTab('quiz')">⚙️ Quiz Settings</button>
+    <button class="nav-item"        data-tab="questions"     onclick="switchTab('questions')">❓ Quiz Questions</button>
+    <div class="nav-sep"></div>
+    <button class="nav-item"        data-tab="participants"  onclick="switchTab('participants')">👥 Participants</button>
+    <button class="nav-item"        data-tab="results"       onclick="switchTab('results')">📈 Quiz Results</button>
+    <button class="nav-item"        data-tab="violations"    onclick="switchTab('violations')">⚠ Violations</button>
+    <div class="nav-sep"></div>
+    <button class="nav-item"        data-tab="announcements" onclick="switchTab('announcements')">📢 Announcements</button>
     <div style="flex:1;"></div>
     <a href="/dashboard.html" class="nav-item" style="color:var(--accent2);">← Student View</a>
   </nav>
   <div class="sidebar-footer">
     <div class="user-pill">
-      <span id="adminName" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Admin</span>
-      <button class="btn-signout" onclick="signOut()" title="Sign out">
-        <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      <span id="adminName" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.78rem;">Admin</span>
+      <button class="btn-so" onclick="signOut()" title="Sign out">
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
       </button>
     </div>
   </div>
@@ -126,180 +155,178 @@ tr:hover td{background:rgba(255,255,255,0.01);}
     <span class="admin-badge">ADMIN</span>
   </div>
 
-  <!-- ── DASHBOARD TAB ── -->
+  <!-- ── DASHBOARD ── -->
   <div class="tab-panel active" id="tab-dashboard">
-    <div class="page-title">Admin Dashboard</div>
-    <div class="page-sub">Platform overview and quick actions.</div>
+    <div class="page-title">Dashboard</div>
+    <div class="page-sub">Platform overview.</div>
     <div class="stats-strip">
-      <div class="stat-mini"><div class="stat-mini-label">Participants</div><div class="stat-mini-value" id="statParticipants">—</div></div>
-      <div class="stat-mini"><div class="stat-mini-label">Quizzes Submitted</div><div class="stat-mini-value" id="statSubmissions">—</div></div>
-      <div class="stat-mini"><div class="stat-mini-label">Violations Today</div><div class="stat-mini-value" id="statViolations" style="color:var(--warn);">—</div></div>
-      <div class="stat-mini"><div class="stat-mini-label">Active Quiz Week</div><div class="stat-mini-value" id="statActiveQuiz" style="color:var(--accent);">—</div></div>
+      <div class="stat-mini"><div class="sml">Participants</div><div class="smv" id="stP">—</div></div>
+      <div class="stat-mini"><div class="sml">Submissions</div><div class="smv" id="stS">—</div></div>
+      <div class="stat-mini"><div class="sml">Violations</div><div class="smv" id="stV" style="color:var(--warn);">—</div></div>
+      <div class="stat-mini"><div class="sml">Active Quiz</div><div class="smv" id="stQ" style="color:var(--accent);">—</div></div>
     </div>
-    <div id="dashboardExtra"></div>
   </div>
 
-  <!-- ── CONTENT TAB ── -->
+  <!-- ── COURSE CONTENT ── -->
   <div class="tab-panel" id="tab-content">
-    <div class="page-title">Course Content Manager</div>
-    <div class="page-sub">Manage week content. Publish a week to make it visible to students.</div>
-
-    <!-- Week selector -->
+    <div class="page-title">Course Content</div>
+    <div class="page-sub">Select a week, edit daily content, then publish to make it visible to students.</div>
     <div class="card">
-      <div class="card-title">Select Week to Edit</div>
-      <div style="display:flex;gap:0.75rem;flex-wrap:wrap;" id="weekSelectorBtns">
-        <!-- Buttons rendered by JS -->
-      </div>
+      <div class="card-title">Select Week</div>
+      <div class="week-selector" id="contentWeekBtns"></div>
     </div>
-
-    <!-- Week editor -->
-    <div id="weekEditorArea"></div>
+    <div id="contentEditor"></div>
   </div>
 
-  <!-- ── QUIZ TAB ── -->
+  <!-- ── QUIZ SETTINGS ── -->
   <div class="tab-panel" id="tab-quiz">
-    <div class="page-title">Quiz Manager</div>
-    <div class="page-sub">Configure weekly quizzes. Set the active quiz, URL, and time window.</div>
+    <div class="page-title">Quiz Settings</div>
+    <div class="page-sub">Configure the active quiz. Questions are managed separately in Quiz Questions.</div>
 
-    <div class="card" id="quizConfigCard">
+    <div class="card" id="quizCfgCard">
       <div class="card-title">Active Quiz Configuration</div>
       <div class="form-row">
-        <div>
-          <label>Week Number</label>
-          <input type="number" id="qcWeek" min="1" max="10" value="1">
-        </div>
-        <div>
-          <label>Quiz Title</label>
-          <input type="text" id="qcTitle" placeholder="Week 1 Quiz">
-        </div>
-      </div>
-      <div class="form-row full">
-        <div>
-          <label>Quiz URL (TestPortal or any quiz link)</label>
-          <input type="url" id="qcUrl" placeholder="https://www.testportal.net/#!/...">
-        </div>
+        <div><label>Week Number</label><input type="number" id="qcWeek" min="1" max="10" value="1"></div>
+        <div><label>Quiz Title</label><input type="text" id="qcTitle" placeholder="Week 1 Quiz — Data Foundations"></div>
       </div>
       <div class="form-row">
-        <div>
-          <label>Opens At (leave blank for immediate)</label>
-          <input type="datetime-local" id="qcOpens">
-        </div>
-        <div>
-          <label>Closes At (leave blank for no limit)</label>
-          <input type="datetime-local" id="qcCloses">
-        </div>
+        <div><label>Time Limit (minutes)</label><input type="number" id="qcTime" value="30" min="1"></div>
+        <div><label>Opens At (leave blank = open now)</label><input type="datetime-local" id="qcOpens"></div>
       </div>
       <div class="form-row">
-        <div>
-          <label>Max Score</label>
-          <input type="number" id="qcMaxScore" value="100" min="1">
-        </div>
-        <div>
-          <label>Time Limit (minutes)</label>
-          <input type="number" id="qcTimeLimit" value="30" min="1">
+        <div><label>Closes At (leave blank = no limit)</label><input type="datetime-local" id="qcCloses"></div>
+        <div style="display:flex;flex-direction:column;justify-content:flex-end;gap:.55rem;padding-bottom:.1rem;">
+          <label class="toggle"><input type="checkbox" id="qcActive"> Quiz is Active (visible to students)</label>
+          <label class="toggle"><input type="checkbox" id="qcShuffle" checked> Shuffle question order</label>
         </div>
       </div>
-      <div style="display:flex;align-items:center;gap:1.5rem;margin-bottom:1rem;flex-wrap:wrap;">
-        <label class="toggle"><input type="checkbox" id="qcActive"> <span>Quiz is Active (visible to students)</span></label>
-      </div>
-      <div style="display:flex;gap:0.75rem;">
-        <button class="btn btn-primary" onclick="saveQuizConfig()">Save Quiz Config</button>
+      <div style="display:flex;gap:.65rem;flex-wrap:wrap;">
+        <button class="btn btn-primary" onclick="saveQuizConfig()">💾 Save Config</button>
         <button class="btn btn-outline" onclick="loadQuizConfig()">↻ Reload</button>
       </div>
     </div>
 
     <div class="card">
-      <div class="card-title">All Quiz Configs</div>
-      <div class="table-wrap" id="quizConfigTable">Loading…</div>
+      <div class="card-title">All Quiz Weeks</div>
+      <div class="table-wrap" id="quizCfgTable">Loading…</div>
     </div>
   </div>
 
-  <!-- ── PARTICIPANTS TAB ── -->
+  <!-- ── QUIZ QUESTIONS ── -->
+  <div class="tab-panel" id="tab-questions">
+    <div class="page-title">Quiz Questions</div>
+    <div class="page-sub">Questions are stored securely — correct answers are never sent to students' browsers.</div>
+
+    <!-- Week picker -->
+    <div class="card">
+      <div class="card-title">Select Quiz Week</div>
+      <div class="week-selector" id="qWeekBtns"></div>
+    </div>
+
+    <!-- Question count + add -->
+    <div id="questionsArea" style="display:none;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:.65rem;">
+        <div>
+          <span id="qCountLabel" style="font-weight:700;font-size:.95rem;"></span>
+          <span id="qTotalMarks" style="color:var(--muted);font-size:.82rem;margin-left:.75rem;"></span>
+        </div>
+        <div style="display:flex;gap:.55rem;flex-wrap:wrap;">
+          <button class="btn btn-outline btn-sm" onclick="showBulkImport()">⬆ Bulk Import CSV</button>
+          <button class="btn btn-primary" onclick="addQuestion()">+ Add Question</button>
+        </div>
+      </div>
+
+      <!-- Bulk import panel (hidden by default) -->
+      <div class="card" id="bulkImportPanel" style="display:none;border-color:rgba(59,130,246,.3);">
+        <div class="card-title">Bulk Import via CSV</div>
+        <p style="font-size:.82rem;color:var(--muted);margin-bottom:.75rem;line-height:1.6;">
+          CSV format (one question per row, no header needed):<br>
+          <code style="font-family:'DM Mono',monospace;font-size:.78rem;background:var(--bg);padding:.2rem .5rem;border-radius:5px;">
+            question_text, option_a, option_b, option_c, option_d, correct_option(A/B/C/D), marks, explanation
+          </code>
+        </p>
+        <div class="form-row full">
+          <div><label>Paste CSV content</label><textarea id="csvContent" rows="8" placeholder="What is the mean of 2,4,6,8?,5,6,5.5,7,B,1,The mean is (2+4+6+8)/4=5"></textarea></div>
+        </div>
+        <div style="display:flex;gap:.55rem;">
+          <button class="btn btn-blue" onclick="importCSV()">Import Questions</button>
+          <button class="btn btn-outline" onclick="hideBulkImport()">Cancel</button>
+        </div>
+      </div>
+
+      <!-- Questions list -->
+      <div id="questionsList"></div>
+    </div>
+  </div>
+
+  <!-- ── PARTICIPANTS ── -->
   <div class="tab-panel" id="tab-participants">
     <div class="page-title">Participants</div>
-    <div class="page-sub">All registered participants.</div>
-    <div style="display:flex;gap:0.75rem;margin-bottom:1rem;flex-wrap:wrap;">
+    <div class="page-sub">All registered users.</div>
+    <div style="display:flex;gap:.65rem;margin-bottom:1rem;flex-wrap:wrap;">
       <button class="btn btn-outline" onclick="loadParticipants()">↻ Refresh</button>
-      <button class="btn btn-outline" onclick="exportParticipantsCSV()">⬇ Export CSV</button>
+      <button class="btn btn-outline" onclick="exportParticipants()">⬇ Export CSV</button>
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>#</th><th>Name</th><th>Email</th><th>College</th><th>Year</th><th>Branch</th><th>Phone</th><th>Joined</th><th>Admin</th></tr></thead>
-        <tbody id="participantsBody"><tr><td colspan="9" style="color:var(--muted);padding:2rem;text-align:center;">Loading…</td></tr></tbody>
+        <thead><tr><th>#</th><th>Name</th><th>Email</th><th>College</th><th>Year</th><th>Branch</th><th>Phone</th><th>Joined</th></tr></thead>
+        <tbody id="participantsBody"><tr><td colspan="8" style="color:var(--muted);text-align:center;padding:2rem;">Loading…</td></tr></tbody>
       </table>
     </div>
   </div>
 
-  <!-- ── RESULTS TAB ── -->
+  <!-- ── RESULTS ── -->
   <div class="tab-panel" id="tab-results">
     <div class="page-title">Quiz Results</div>
-    <div class="page-sub">View individual and aggregate quiz results.</div>
-    <div style="display:flex;gap:0.75rem;margin-bottom:1rem;flex-wrap:wrap;">
-      <select id="resultsWeekFilter" style="padding:0.5rem 0.85rem;background:var(--surface);border:1px solid var(--border);border-radius:9px;color:var(--text);font-size:0.85rem;" onchange="loadResults()">
+    <div class="page-sub">View and export quiz scores per participant.</div>
+    <div style="display:flex;align-items:center;gap:.65rem;margin-bottom:1rem;flex-wrap:wrap;">
+      <select id="resultWeekFilter" style="padding:.48rem .82rem;background:var(--surface);border:1px solid var(--border);border-radius:9px;color:var(--text);font-size:.84rem;" onchange="loadResults()">
         <option value="">All Weeks</option>
         <option>1</option><option>2</option><option>3</option><option>4</option><option>5</option>
       </select>
       <button class="btn btn-outline" onclick="loadResults()">↻ Refresh</button>
-      <button class="btn btn-outline" onclick="exportResultsCSV()">⬇ Export CSV</button>
+      <button class="btn btn-outline" onclick="exportResults()">⬇ Export CSV</button>
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Name</th><th>Email</th><th>College</th><th>Week</th><th>Score</th><th>Max</th><th>%</th><th>Tab Switches</th><th>FS Exits</th><th>Submitted</th><th>Actions</th></tr></thead>
-        <tbody id="resultsBody"><tr><td colspan="11" style="color:var(--muted);padding:2rem;text-align:center;">Loading…</td></tr></tbody>
+        <thead><tr><th>Name</th><th>Email</th><th>College</th><th>Week</th><th>Score</th><th>Max</th><th>%</th><th>Correct</th><th>Tab Sw.</th><th>FS Exits</th><th>Submitted</th><th>Detail</th></tr></thead>
+        <tbody id="resultsBody"><tr><td colspan="12" style="color:var(--muted);text-align:center;padding:2rem;">Loading…</td></tr></tbody>
       </table>
     </div>
   </div>
 
-  <!-- ── VIOLATIONS TAB ── -->
+  <!-- ── VIOLATIONS ── -->
   <div class="tab-panel" id="tab-violations">
-    <div class="page-title">Violations Log</div>
-    <div class="page-sub">Tab switches, fullscreen exits, and other security events.</div>
-    <div style="margin-bottom:1rem;">
-      <button class="btn btn-outline" onclick="loadViolations()">↻ Refresh</button>
-    </div>
+    <div class="page-title">Security Violations</div>
+    <div class="page-sub">Tab switches, fullscreen exits, and window-blur events logged during quizzes.</div>
+    <div style="margin-bottom:1rem;"><button class="btn btn-outline" onclick="loadViolations()">↻ Refresh</button></div>
     <div class="table-wrap">
       <table>
         <thead><tr><th>Name</th><th>Email</th><th>Week</th><th>Type</th><th>Time</th></tr></thead>
-        <tbody id="violationsBody"><tr><td colspan="5" style="color:var(--muted);padding:2rem;text-align:center;">Loading…</td></tr></tbody>
+        <tbody id="violationsBody"><tr><td colspan="5" style="color:var(--muted);text-align:center;padding:2rem;">Loading…</td></tr></tbody>
       </table>
     </div>
   </div>
 
-  <!-- ── ANNOUNCEMENTS TAB ── -->
+  <!-- ── ANNOUNCEMENTS ── -->
   <div class="tab-panel" id="tab-announcements">
     <div class="page-title">Announcements</div>
-    <div class="page-sub">Manage the announcement banners shown to students.</div>
+    <div class="page-sub">Banners shown to students on the course dashboard.</div>
     <div class="card">
       <div class="card-title">Create Announcement</div>
-      <div class="form-row full">
-        <div>
-          <label>Title *</label>
-          <input type="text" id="annTitle" placeholder="e.g. Summer Analytics 2025: Welcomes you aboard!">
-        </div>
-      </div>
-      <div class="form-row full">
-        <div>
-          <label>Body Text</label>
-          <textarea id="annBody" placeholder="Main announcement text…"></textarea>
-        </div>
-      </div>
-      <div class="form-row full">
-        <div>
-          <label>Links (one per line: Label|URL)</label>
-          <textarea id="annLinks" placeholder="Repo 1|https://github.com/...&#10;Repo 2|https://github.com/..."></textarea>
-        </div>
-      </div>
-      <div style="display:flex;align-items:center;gap:1.5rem;margin-bottom:1rem;">
+      <div class="form-row full"><div><label>Title *</label><input type="text" id="annTitle" placeholder="Summer Analytics 2025: Week 3 is live!"></div></div>
+      <div class="form-row full"><div><label>Body</label><textarea id="annBody" placeholder="Main message…"></textarea></div></div>
+      <div class="form-row full"><div>
+        <label>Links — one per line: <code style="font-family:'DM Mono',monospace;font-size:.75rem;">Label|URL</code></label>
+        <textarea id="annLinks" rows="3" placeholder="Repo 1|https://github.com/…&#10;Repo 2|https://github.com/…"></textarea>
+      </div></div>
+      <div style="display:flex;gap:1.2rem;margin-bottom:1rem;flex-wrap:wrap;">
         <label class="toggle"><input type="checkbox" id="annActive" checked> Active</label>
         <label class="toggle"><input type="checkbox" id="annPinned"> Pinned</label>
       </div>
-      <button class="btn btn-primary" onclick="createAnnouncement()">Post Announcement</button>
+      <button class="btn btn-primary" onclick="createAnn()">Post Announcement</button>
     </div>
-
-    <div class="card">
-      <div class="card-title">Current Announcements</div>
-      <div id="annList">Loading…</div>
-    </div>
+    <div class="card"><div class="card-title">Current Announcements</div><div id="annList">Loading…</div></div>
   </div>
 </main>
 
