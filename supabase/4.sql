@@ -1,0 +1,1 @@
+ALTER TABLE public.quiz_questions ALTER COLUMN week_number DROP NOT NULL;

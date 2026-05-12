@@ -1,59 +1,55 @@
 -- ================================================================
--- MIGRATION v2 — Summer Analytics 2025 (Combined & Safe)
--- Run this in Supabase SQL Editor. It is idempotent.
+-- MIGRATION v2 — Summer Analytics 2025
+-- Run this in Supabase SQL Editor AFTER the original schema.sql.
+-- It is idempotent — safe to run multiple times.
 -- ================================================================
 
--- ── 1. Create secure admin check function FIRST
---    (SECURITY DEFINER bypasses RLS to prevent infinite loops)
-CREATE OR REPLACE FUNCTION public.is_admin()
-RETURNS BOOLEAN 
-LANGUAGE plpgsql 
-SECURITY DEFINER SET search_path = public
-AS $$
-BEGIN
-  RETURN EXISTS (
-    SELECT 1 FROM public.profiles 
-    WHERE id = auth.uid() AND is_admin = true
-  );
-END;
-$$;
-
--- ── 2. Table Structure Updates (Fix 2, 3, 4, 6)
+-- ── Fix 3: Remove unique constraint on quiz_config.week_number
+--    Quizzes are now identified by their UUID, not week_number.
+--    week_number becomes a display label only.
 ALTER TABLE public.quiz_config DROP CONSTRAINT IF EXISTS quiz_config_week_number_key;
 
+-- ── Fix 3: quiz_questions belong to a specific quiz (not just a week)
 ALTER TABLE public.quiz_questions
-  ADD COLUMN IF NOT EXISTS quiz_config_id uuid REFERENCES public.quiz_config(id) ON DELETE CASCADE,
-  ADD COLUMN IF NOT EXISTS question_image_url text;
+  ADD COLUMN IF NOT EXISTS quiz_config_id uuid REFERENCES public.quiz_config(id) ON DELETE CASCADE;
 
-ALTER TABLE public.quiz_config 
-  ADD COLUMN IF NOT EXISTS results_released boolean DEFAULT false,
-  ADD COLUMN IF NOT EXISTS results_released_at timestamptz;
+-- ── Fix 4: Image support for questions
+ALTER TABLE public.quiz_questions ADD COLUMN IF NOT EXISTS question_image_url text;
 
+-- ── Fix 2: Results release control — admin decides when students see scores
+ALTER TABLE public.quiz_config ADD COLUMN IF NOT EXISTS results_released     boolean     DEFAULT false;
+ALTER TABLE public.quiz_config ADD COLUMN IF NOT EXISTS results_released_at  timestamptz;
+
+-- ── Fix 3: quiz_scores now reference the specific quiz config
+ALTER TABLE public.quiz_scores
+  ADD COLUMN IF NOT EXISTS quiz_config_id uuid REFERENCES public.quiz_config(id) ON DELETE SET NULL;
+
+-- ── Fix 3: Change uniqueness from (user, week) → (user, quiz_config)
 ALTER TABLE public.quiz_scores DROP CONSTRAINT IF EXISTS quiz_scores_user_id_week_number_key;
 ALTER TABLE public.quiz_scores
-  ADD COLUMN IF NOT EXISTS quiz_config_id uuid REFERENCES public.quiz_config(id) ON DELETE SET NULL,
   ADD CONSTRAINT quiz_scores_user_quiz UNIQUE (user_id, quiz_config_id);
 
-ALTER TABLE public.week_days 
-  ADD COLUMN IF NOT EXISTS tasks_json jsonb DEFAULT '[]'::jsonb;
+-- ── Fix 6: Flexible tasks per day — JSONB array of task columns.
+--    Structure: [[{label,url}, ...], [{label,url}, ...], ...]
+--    Outer index = task column (0,1,2…); inner = multiple links per column.
+ALTER TABLE public.week_days ADD COLUMN IF NOT EXISTS tasks_json jsonb DEFAULT '[]'::jsonb;
 
+-- ── Fix 9: Admin can read ALL profiles (needed for violations join + leaderboard)
+DROP POLICY IF EXISTS "profiles: own select"  ON public.profiles;
+DROP POLICY IF EXISTS "profiles: select"      ON public.profiles;
+CREATE POLICY "profiles: select" ON public.profiles FOR SELECT
+  USING (
+    auth.uid() = id
+    OR (SELECT is_admin FROM public.profiles WHERE id = auth.uid())
+  );
 
--- ── 3. Profile Security Policies (Fix 9)
--- Drop old recursive/conflicting policies
-DROP POLICY IF EXISTS "profiles: own select" ON public.profiles;
-DROP POLICY IF EXISTS "profiles: select"     ON public.profiles;
+-- Keep insert/update policies (drop duplicates first)
 DROP POLICY IF EXISTS "profiles: own insert" ON public.profiles;
 DROP POLICY IF EXISTS "profiles: own update" ON public.profiles;
-
--- Create safe policies using our new is_admin() function
-CREATE POLICY "profiles: select" ON public.profiles FOR SELECT
-  USING (auth.uid() = id OR public.is_admin());
-
 CREATE POLICY "profiles: own insert" ON public.profiles FOR INSERT WITH CHECK (auth.uid() = id);
 CREATE POLICY "profiles: own update" ON public.profiles FOR UPDATE USING (auth.uid() = id);
 
-
--- ── 4. Storage Bucket Setup (Fix 4)
+-- ── Fix 4: Supabase Storage bucket for question images
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 VALUES (
   'quiz-images', 'quiz-images', true,
@@ -61,24 +57,24 @@ VALUES (
   ARRAY['image/jpeg','image/png','image/gif','image/webp','image/svg+xml']
 ) ON CONFLICT (id) DO NOTHING;
 
--- Drop old policies if they exist to replace cleanly
-DROP POLICY IF EXISTS "quiz-images: public read" ON storage.objects;
-DROP POLICY IF EXISTS "quiz-images: admin upload" ON storage.objects;
-DROP POLICY IF EXISTS "quiz-images: admin delete" ON storage.objects;
-
--- Create storage policies using our new is_admin() function
+-- Storage policy: admins can upload, everyone can read
 CREATE POLICY "quiz-images: public read" ON storage.objects FOR SELECT
   USING (bucket_id = 'quiz-images');
 
 CREATE POLICY "quiz-images: admin upload" ON storage.objects FOR INSERT
-  WITH CHECK (bucket_id = 'quiz-images' AND public.is_admin());
+  WITH CHECK (
+    bucket_id = 'quiz-images'
+    AND (SELECT is_admin FROM public.profiles WHERE id = auth.uid())
+  );
 
 CREATE POLICY "quiz-images: admin delete" ON storage.objects FOR DELETE
-  USING (bucket_id = 'quiz-images' AND public.is_admin());
-
+  USING (
+    bucket_id = 'quiz-images'
+    AND (SELECT is_admin FROM public.profiles WHERE id = auth.uid())
+  );
 
 -- ================================================================
--- 5. Updated RPCs (using UUIDs)
+-- Updated RPC: get_quiz_questions  (now takes quiz_config_id UUID)
 -- ================================================================
 CREATE OR REPLACE FUNCTION public.get_quiz_questions(p_quiz_config_id uuid)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$
@@ -122,7 +118,9 @@ BEGIN
 END;
 $$;
 
-
+-- ================================================================
+-- Updated RPC: submit_quiz  (takes quiz_config_id, not week_number)
+-- ================================================================
 CREATE OR REPLACE FUNCTION public.submit_quiz(
   p_quiz_config_id uuid,
   p_answers        jsonb,
@@ -132,7 +130,7 @@ CREATE OR REPLACE FUNCTION public.submit_quiz(
 )
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$
 DECLARE
-  v_uid  uuid := auth.uid();
+  v_uid    uuid := auth.uid();
   v_email  text;
   v_score  numeric := 0;
   v_max    numeric := 0;
@@ -197,20 +195,15 @@ BEGIN
 END;
 $$;
 
-
--- ================================================================
--- 6. Cleanup & Grants
--- ================================================================
-
--- Drop the old INT-based functions entirely to clean up the DB
-DROP FUNCTION IF EXISTS public.get_quiz_questions(int);
-DROP FUNCTION IF EXISTS public.submit_quiz(int,jsonb,int,int,int);
+-- Re-grant (old overload with p_week_number is replaced)
+REVOKE ALL ON FUNCTION public.get_quiz_questions(int)            FROM authenticated;
+REVOKE ALL ON FUNCTION public.submit_quiz(int,jsonb,int,int,int) FROM authenticated;
 
 GRANT EXECUTE ON FUNCTION public.get_quiz_questions(uuid)              TO authenticated;
 GRANT EXECUTE ON FUNCTION public.submit_quiz(uuid,jsonb,int,int,int)   TO authenticated;
 
 -- ================================================================
--- 7. Indexes
+-- Index updates
 -- ================================================================
 CREATE INDEX IF NOT EXISTS idx_quiz_questions_cfg ON public.quiz_questions (quiz_config_id);
 CREATE INDEX IF NOT EXISTS idx_quiz_scores_cfg    ON public.quiz_scores    (quiz_config_id);
